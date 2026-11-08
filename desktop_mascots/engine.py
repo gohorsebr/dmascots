@@ -75,6 +75,22 @@ def bump(t: float, center: float, width: float) -> float:
     return math.cos(d * math.pi / 2) ** 2 if d < 1 else 0.0
 
 
+def keyframes(t: float, frames) -> tuple:
+    """Eased interpolation through (time, value, value, ...) keyframes.
+
+    Values may be numbers or (x, y) tuples. Before the first / after the last
+    keyframe the end values are held.
+    """
+    if t <= frames[0][0]:
+        return tuple(frames[0][1:])
+    for a, b in zip(frames, frames[1:]):
+        if t <= b[0]:
+            k = ease((t - a[0]) / (b[0] - a[0])) if b[0] > a[0] else 1.0
+            return tuple(lerp2(x, y, k) if isinstance(x, tuple) else lerp(x, y, k)
+                         for x, y in zip(a[1:], b[1:]))
+    return tuple(frames[-1][1:])
+
+
 class Brain:
     pose_cls: ClassVar[type] = BasePose
     WALK_SPEED: ClassVar[float] = 75.0
@@ -82,6 +98,8 @@ class Brain:
     JUMP_VX: ClassVar[float] = 220.0
     DIZZY_IMPACT: ClassVar[float] = 1900.0   # landing speed that leaves it seeing stars
     LINES: ClassVar[tuple[str, ...]] = ("Hi!",)
+    # states where the feet are off the floor and the state itself moves the mascot
+    AIRBORNE: ClassVar[tuple[str, ...]] = ("air", "dragged")
     # (weight, state, (min_seconds, max_seconds)) picked whenever idle time runs out
     CHOICES: ClassVar[tuple] = (
         (45, "walk", (2.5, 7.0)),
@@ -115,7 +133,7 @@ class Brain:
     # ----------------------------------------------------------- events
     @property
     def airborne(self) -> bool:
-        return self.state in ("air", "dragged")
+        return self.state in self.AIRBORNE
 
     @property
     def entered(self) -> bool:

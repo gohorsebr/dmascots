@@ -1,6 +1,7 @@
 """Registry of available mascots. To add one, create a subpackage exposing CHARACTER."""
 from ..engine import Character
+from .crow import CHARACTER as CROW
 from .goose import CHARACTER as GOOSE
 from .monkey import CHARACTER as MONKEY
 
-CHARACTERS: dict[str, Character] = {c.name: c for c in (MONKEY, GOOSE)}
+CHARACTERS: dict[str, Character] = {c.name: c for c in (MONKEY, GOOSE, CROW)}

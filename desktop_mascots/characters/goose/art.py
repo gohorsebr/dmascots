@@ -13,7 +13,7 @@ import math
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPolygonF
 
-from ...art import paint_bubble, paint_stars, pen, polyline, stroke
+from ...art import paint_bubble, paint_stars, pen, polyline, stroke, tapered_curve
 from .brain import GoosePose
 
 FEATHER = QColor("#FCFCF8")
@@ -63,7 +63,7 @@ def paint(p: QPainter, pose: GoosePose, facing: int = 1, head_only: bool = False
     skull = QPainterPath()
     skull.addEllipse(head, HEAD_R, HEAD_R)
     # boolean union (not addPath): the pieces wind in different directions
-    sil = _neck_path(head, pose.neck_bend).simplified().united(skull)
+    sil = _neck_path(head, pose.neck_bend).united(skull)
     if body is not None:
         sil = sil.united(body)
 
@@ -102,30 +102,11 @@ def paint(p: QPainter, pose: GoosePose, facing: int = 1, head_only: bool = False
 
 
 def _neck_path(head: QPointF, bend: float) -> QPainterPath:
-    """The neck as a filled shape: a cubic spine swept with a tapering width."""
+    """The neck: a cubic spine from the breast to the head, swept with a tapering width."""
     p0 = (NECK_BASE.x(), NECK_BASE.y())
-    p1 = (p0[0] + 6 + bend, p0[1] - 16)
-    p2 = (head.x() - 4 + bend * 0.5, head.y() + 14)
-    p3 = (head.x(), head.y())
-    left, right = [], []
-    n = 16
-    for i in range(n + 1):
-        t = i / n
-        u = 1 - t
-        x = u ** 3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t ** 3 * p3[0]
-        y = u ** 3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t ** 3 * p3[1]
-        dx = 3 * u * u * (p1[0] - p0[0]) + 6 * u * t * (p2[0] - p1[0]) + 3 * t * t * (p3[0] - p2[0])
-        dy = 3 * u * u * (p1[1] - p0[1]) + 6 * u * t * (p2[1] - p1[1]) + 3 * t * t * (p3[1] - p2[1])
-        d = math.hypot(dx, dy) or 1.0
-        nx, ny = -dy / d, dx / d
-        w = (NECK_TOP_W + (NECK_BASE_W - NECK_TOP_W) * u ** 1.6) / 2
-        left.append(QPointF(x + nx * w, y + ny * w))
-        right.append(QPointF(x - nx * w, y - ny * w))
-    path = QPainterPath()
-    path.setFillRule(Qt.WindingFill)      # tight bends may fold the outline over itself
-    path.addPolygon(QPolygonF(left + right[::-1]))
-    path.closeSubpath()
-    return path
+    return tapered_curve(p0, (p0[0] + 6 + bend, p0[1] - 16),
+                         (head.x() - 4 + bend * 0.5, head.y() + 14), (head.x(), head.y()),
+                         NECK_BASE_W, NECK_TOP_W)
 
 
 def _body_path(tail: float) -> QPainterPath:

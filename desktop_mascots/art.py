@@ -45,6 +45,30 @@ def polyline(*pts: tuple[float, float]) -> QPainterPath:
     return path
 
 
+def tapered_curve(p0: tuple[float, float], p1: tuple[float, float], p2: tuple[float, float],
+                  p3: tuple[float, float], w0: float, w1: float, steps: int = 16,
+                  power: float = 1.6) -> QPainterPath:
+    """A filled shape: a cubic Bézier spine swept with a width tapering from w0 to w1 (necks)."""
+    left, right = [], []
+    for i in range(steps + 1):
+        t = i / steps
+        u = 1 - t
+        x = u ** 3 * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t ** 3 * p3[0]
+        y = u ** 3 * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t ** 3 * p3[1]
+        dx = 3 * u * u * (p1[0] - p0[0]) + 6 * u * t * (p2[0] - p1[0]) + 3 * t * t * (p3[0] - p2[0])
+        dy = 3 * u * u * (p1[1] - p0[1]) + 6 * u * t * (p2[1] - p1[1]) + 3 * t * t * (p3[1] - p2[1])
+        d = math.hypot(dx, dy) or 1.0
+        nx, ny = -dy / d, dx / d
+        w = (w1 + (w0 - w1) * u ** power) / 2
+        left.append(QPointF(x + nx * w, y + ny * w))
+        right.append(QPointF(x - nx * w, y - ny * w))
+    path = QPainterPath()
+    path.setFillRule(Qt.WindingFill)      # tight bends may fold the outline over itself
+    path.addPolygon(QPolygonF(left + right[::-1]))
+    path.closeSubpath()
+    return path.simplified()
+
+
 def paint_stars(p: QPainter, cx: float, cy: float, angle: float, rx: float = 25, ry: float = 5) -> None:
     for i in range(3):
         a = angle + i * 2 * math.pi / 3
