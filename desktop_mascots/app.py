@@ -1,4 +1,4 @@
-"""Entry point: CLI, tray icon/menus, and the herd of mascot windows."""
+"""Entry point: starts the app (or hands off to the running one), the tray, and the herd."""
 from __future__ import annotations
 
 import argparse
@@ -6,6 +6,7 @@ import os
 import random
 import signal
 import sys
+import time
 
 MAX_TEXT = 500
 
@@ -16,21 +17,19 @@ def reading_time(text: str) -> float:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from .cli import COMMANDS
+
     argv = sys.argv[1:] if argv is None else argv
-    if argv[:1] == ["say"]:
-        return say_command(argv[1:])
-    if argv[:1] == ["quit"]:
-        return quit_command(argv[1:])
-    if argv[:1] == ["steal"]:
-        return steal_command(argv[1:])
+    if argv[:1] and argv[0] in COMMANDS:
+        return COMMANDS[argv[0]](argv[1:])
 
     from .characters import CHARACTERS
 
     names = ", ".join(CHARACTERS)
     parser = argparse.ArgumentParser(
         prog="desktop-mascots", description="Mascots that live on top of your windows.",
-        epilog="Commands for the running app: 'say [--to MASCOT] TEXT', "
-               "'steal [--to MASCOT] [--seconds N]', 'quit' (or Ctrl+C).")
+        epilog="Commands for the running app: list, add, remove, say, steal, quit "
+               "(see 'desktop-mascots COMMAND --help').")
     parser.add_argument("mascots", nargs="*", metavar="MASCOT",
                         help=f"mascots to spawn, repeat for more ({names}); default: one of each")
     parser.add_argument("--scale", type=float, default=1.0, help="size multiplier (default 1.0)")
@@ -38,6 +37,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="the mascots leave after this many seconds (and the app exits if none are left)")
     parser.add_argument("--say", metavar="TEXT",
                         help="the mascots start by saying TEXT ('-' reads it from stdin)")
+    parser.add_argument("--click-through", action="store_true",
+                        help="clicks pass straight through the mascots (no poking or dragging)")
     parser.add_argument("--menu", action="store_true",
                         help="right-clicking a mascot opens its menu (off by default)")
     parser.add_argument("--no-tray", action="store_true",
@@ -67,8 +68,9 @@ def main(argv: list[str] | None = None) -> int:
     # Already running? Hand the new mascots to that instance instead of starting a second one.
     reply = send({"cmd": "spawn", "mascots": wanted, "lifetime": args.time, "say": args.say})
     if reply is not None:
+        added = ", ".join(f"{m['name']} #{m['id']}" for m in reply.get("mascots", [])) or ", ".join(wanted)
         leaving = f" (leaving in {args.time:g}s)" if args.time else ""
-        print(f"desktop-mascots is already running; added {', '.join(wanted)}{leaving}.")
+        print(f"desktop-mascots is already running; added {added}{leaving}.")
         return 0
 
     app.setApplicationName("Desktop Mascots")
@@ -79,98 +81,18 @@ def main(argv: list[str] | None = None) -> int:
     herd = Herd(app, CHARACTERS, scale=args.scale, managed=args.managed,
                 menu=args.menu, tray=not args.no_tray)
     herd.quit_when_empty = args.time is not None
+    herd.through.setChecked(args.click_through)
     server = Server(herd.handle, app)
     if not server.listening:
-        print("warning: couldn't open the control socket; 'say' won't reach this instance",
+        print("warning: couldn't open the control socket; commands won't reach this instance",
               file=sys.stderr)
     for name in wanted:
         herd.spawn(CHARACTERS[name], lifetime=args.time, say=args.say)
     return app.exec()
 
 
-def steal_command(argv: list[str]) -> int:
-    from .characters import CHARACTERS
-
-    parser = argparse.ArgumentParser(
-        prog="desktop-mascots steal",
-        description="A mascot runs to your pointer, grabs it and runs off with it. "
-                    "Click the thief to get it back early.")
-    parser.add_argument("--to", default="any", metavar="MASCOT",
-                        help=f"who steals it: any (default, picked at random), {', '.join(CHARACTERS)}")
-    parser.add_argument("--seconds", type=float, default=5.0,
-                        help="how long it holds on to the pointer (default 5, max 60)")
-    args = parser.parse_args(argv)
-    if args.to != "any" and args.to not in CHARACTERS:
-        parser.error(f"unknown mascot: {args.to}")
-    if not 0 < args.seconds <= 60:
-        parser.error("--seconds must be more than 0 and at most 60")
-
-    from PySide6.QtCore import QCoreApplication
-
-    from .ipc import send
-
-    _app = QCoreApplication(sys.argv[:1])  # noqa: F841 -- QLocalSocket needs an app object
-    reply = send({"cmd": "steal", "to": args.to, "seconds": args.seconds})
-    if reply is None:
-        print("desktop-mascots isn't running (start it with: desktop-mascots)", file=sys.stderr)
-        return 1
-    if not reply.get("ok"):
-        print(f"error: {reply.get('error')}", file=sys.stderr)
-        return 1
-    return 0
-
-
-def quit_command(argv: list[str]) -> int:
-    argparse.ArgumentParser(prog="desktop-mascots quit",
-                            description="Close the running mascots.").parse_args(argv)
-    from PySide6.QtCore import QCoreApplication
-
-    from .ipc import send
-
-    _app = QCoreApplication(sys.argv[:1])  # noqa: F841 -- QLocalSocket needs an app object
-    if send({"cmd": "quit"}) is None:
-        print("desktop-mascots isn't running", file=sys.stderr)
-        return 1
-    return 0
-
-
-def say_command(argv: list[str]) -> int:
-    from .characters import CHARACTERS
-
-    parser = argparse.ArgumentParser(prog="desktop-mascots say",
-                                     description="Make the running mascots say something.")
-    parser.add_argument("text", nargs="+", help="what to say ('-' reads it from stdin)")
-    parser.add_argument("--to", default="all", metavar="MASCOT",
-                        help=f"who says it: all (default), {', '.join(CHARACTERS)}")
-    parser.add_argument("--seconds", type=float, help="how long the bubble stays (default: based on length)")
-    args = parser.parse_args(argv)
-    if args.to != "all" and args.to not in CHARACTERS:
-        parser.error(f"unknown mascot: {args.to}")
-    text = sys.stdin.read() if args.text == ["-"] else " ".join(args.text)
-    text = " ".join(text.split())  # one paragraph; the bubble wraps it
-    if not text:
-        parser.error("nothing to say")
-
-    from PySide6.QtCore import QCoreApplication
-
-    from .ipc import send
-
-    _app = QCoreApplication(sys.argv[:1])  # noqa: F841 -- QLocalSocket needs an app object
-    reply = send({"cmd": "say", "text": text, "to": args.to, "seconds": args.seconds})
-    if reply is None:
-        print("desktop-mascots isn't running (start it with: desktop-mascots)", file=sys.stderr)
-        return 1
-    if not reply.get("ok"):
-        print(f"error: {reply.get('error')}", file=sys.stderr)
-        return 1
-    if reply.get("count", 0) == 0:
-        print(f"no {args.to} on screen right now", file=sys.stderr)
-        return 1
-    return 0
-
-
 class Herd:
-    """All live mascot windows plus the menus that control them."""
+    """All live mascot windows plus the menus and commands that control them."""
 
     def __init__(self, app, characters, scale: float, managed: bool, menu: bool = False, tray: bool = True):
         from PySide6.QtGui import QAction, QIcon
@@ -181,7 +103,8 @@ class Herd:
         self.app, self.characters, self.scale, self.managed = app, characters, scale, managed
         self.menu_enabled = menu      # right-click menu on the mascots themselves
         self.windows: list = []
-        self.quit_when_empty = False   # set when started with --time: exit once all have left
+        self.quit_when_empty = False  # set when started with --time: exit once all have left
+        self._next_id = 1
 
         self.add_menu = QMenu("Add")
         self.icons = {}
@@ -216,6 +139,7 @@ class Herd:
         menu.addSeparator()
         menu.addAction(self.quit)
 
+    # ----------------------------------------------------------- mascots
     def spawn(self, character, lifetime: float | None = None, say: str | None = None):
         """Show a new mascot. lifetime: seconds until it leaves; say: its opening line."""
         from PySide6.QtCore import QTimer
@@ -224,6 +148,10 @@ class Herd:
         from .window import MascotWindow
 
         w = MascotWindow(character, scale=self.scale, managed=self.managed)
+        w.mascot_id = self._next_id
+        self._next_id += 1
+        w.expires_at = time.monotonic() + lifetime if lifetime else None
+        w.setWindowTitle(f"Desktop mascot: {character.name} #{w.mascot_id}")
         if self.menu_enabled:     # otherwise right-clicks are simply ignored
             w.menu = QMenu(w)
             w.menu.addAction("Say something…", lambda: self.ask_and_say([w]))
@@ -239,7 +167,7 @@ class Herd:
             text = " ".join(say.split())[:MAX_TEXT]
             self.say(text, [w], lifetime or reading_time(text))
         if lifetime:
-            # parented to the window: cancelled automatically if it's shooed first
+            # parented to the window: cancelled automatically if it's removed first
             QTimer.singleShot(round(lifetime * 1000), w, lambda: self.remove(w))
         return w
 
@@ -249,9 +177,29 @@ class Herd:
         self.windows.remove(w)
         w.close()
         w.deleteLater()
-        if not self.windows and (self.tray is None or self.quit_when_empty):
-            self.app.quit()  # nothing left to click on, or our --time is up
+        # An empty herd keeps running (more can be added with 'add' or the tray);
+        # only an app started with --time exits once its mascots have all left.
+        if not self.windows and self.quit_when_empty:
+            self.app.quit()
 
+    def select(self, target) -> list:
+        """Windows matching a target: 'all'/'any', a mascot id, or a mascot name."""
+        target = str(target or "all")
+        if target in ("all", "any"):
+            return list(self.windows)
+        if target.isdigit():
+            return [w for w in self.windows if w.mascot_id == int(target)]
+        return [w for w in self.windows if w.character.name == target]
+
+    @staticmethod
+    def describe(w) -> dict:
+        b = w.brain
+        left = None if w.expires_at is None else max(0.0, w.expires_at - time.monotonic())
+        return {"id": w.mascot_id, "name": w.character.name, "state": b.state,
+                "x": round(b.x), "y": round(b.y), "leaves_in": left,
+                "holding_pointer": b.pointer is not None}
+
+    # ----------------------------------------------------------- talking
     def say(self, text: str, windows, seconds: float | None = None) -> int:
         text = " ".join(text.split())[:MAX_TEXT]
         if not text:
@@ -267,36 +215,45 @@ class Herd:
         if ok:
             self.say(text, [w for w in windows if w in self.windows])
 
+    # ----------------------------------------------------------- control socket
     def handle(self, request: dict) -> dict:
         """Requests from the control socket (see ipc.py)."""
         cmd = request.get("cmd")
-        if cmd == "say":
-            to = request.get("to") or "all"
-            targets = [w for w in self.windows if to == "all" or w.character.name == to]
-            seconds = request.get("seconds")
-            count = self.say(str(request.get("text", "")), targets,
-                             float(seconds) if seconds else None)
-            return {"ok": True, "count": count}
+        if cmd == "list":
+            return {"ok": True, "mascots": [self.describe(w) for w in self.windows]}
         if cmd == "spawn":
             names = [n for n in request.get("mascots", []) if n in self.characters]
             lifetime = request.get("lifetime")
             lifetime = float(lifetime) if lifetime and float(lifetime) > 0 else None
             say = request.get("say")
-            for n in names:
-                self.spawn(self.characters[n], lifetime=lifetime, say=str(say) if say else None)
-            return {"ok": True, "count": len(names)}
+            added = [self.spawn(self.characters[n], lifetime=lifetime, say=str(say) if say else None)
+                     for n in names]
+            return {"ok": True, "count": len(added), "mascots": [self.describe(w) for w in added]}
+        if cmd == "remove":
+            doomed = []
+            for target in request.get("targets", []):
+                doomed += [w for w in self.select(target) if w not in doomed]
+            gone = [self.describe(w) for w in doomed]
+            for w in doomed:
+                self.remove(w)
+            return {"ok": True, "count": len(gone), "mascots": gone}
+        if cmd == "say":
+            targets = self.select(request.get("to") or "all")
+            seconds = request.get("seconds")
+            count = self.say(str(request.get("text", "")), targets, float(seconds) if seconds else None)
+            return {"ok": True, "count": count}
         if cmd == "steal":
             if any(w.brain.state == "steal" or w.brain.pointer or w.brain._pending_steal is not None
                    for w in self.windows):
                 return {"ok": False, "error": "someone is already running off with it"}
             to = request.get("to") or "any"
-            thieves = [w for w in self.windows
-                       if (to == "any" or w.character.name == to) and w.brain.state != "dragged"]
+            thieves = [w for w in self.select(to) if w.brain.state != "dragged"]
             if not thieves:
-                return {"ok": False, "error": f"no {to if to != 'any' else 'mascot'} available to steal it"}
+                return {"ok": False, "error": f"no {'mascot' if to == 'any' else to} available to steal it"}
             seconds = float(request.get("seconds") or 5.0)
-            random.choice(thieves).brain.steal(seconds)
-            return {"ok": True, "count": 1}
+            thief = random.choice(thieves)
+            thief.brain.steal(seconds)
+            return {"ok": True, "count": 1, "mascots": [self.describe(thief)]}
         if cmd == "quit":
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, self.app.quit)   # after the reply has gone out

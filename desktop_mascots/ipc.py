@@ -1,23 +1,31 @@
 """Talk to the running instance over a per-user local socket (Unix socket / Windows named pipe).
 
 Protocol: one JSON object per line in each direction.
-    {"cmd": "say", "text": "...", "to": "all" | "<mascot>", "seconds": float | null}
+    {"cmd": "list"}
     {"cmd": "spawn", "mascots": ["monkey", ...], "lifetime": float | null, "say": str | null}
-    {"cmd": "steal", "to": "any" | "<mascot>", "seconds": float}
+    {"cmd": "remove", "targets": ["all" | "<id>" | "<name>", ...]}
+    {"cmd": "say", "text": "...", "to": "all" | "<id>" | "<name>", "seconds": float | null}
+    {"cmd": "steal", "to": "any" | "<id>" | "<name>", "seconds": float}
     {"cmd": "quit"}
-Replies: {"ok": true, "count": N} or {"ok": false, "error": "..."}
+Targets: a mascot id (from "list") picks that one, a name picks every mascot of that kind.
+Replies: {"ok": true, "count": N, "mascots": [{"id", "name", "state", "x", "y",
+"leaves_in", "holding_pointer"}, ...]} or {"ok": false, "error": "..."}
 """
 from __future__ import annotations
 
 import getpass
 import json
+import os
 import re
 from typing import Callable
 
 from PySide6.QtCore import QObject
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
-SERVER_NAME = "desktop-mascots-" + re.sub(r"[^A-Za-z0-9_.-]", "_", getpass.getuser())
+# DESKTOP_MASCOTS_SOCKET picks a different control socket, i.e. a separate, independent
+# instance (handy for testing without touching the mascots you already have running).
+SERVER_NAME = os.environ.get("DESKTOP_MASCOTS_SOCKET") or \
+    "desktop-mascots-" + re.sub(r"[^A-Za-z0-9_.-]", "_", getpass.getuser())
 
 
 def send(message: dict, timeout_ms: int = 1500) -> dict | None:

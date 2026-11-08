@@ -41,6 +41,7 @@ Or call the installed command directly:
 | `--say TEXT` | The mascots start by saying `TEXT` (`-` reads it from stdin). With `--time`, the bubble stays up until they leave |
 | `--scale N` | Size multiplier |
 | `--menu` | Right-clicking a mascot opens its menu. Off by default, so right-clicks are ignored |
+| `--click-through` | Clicks pass straight through the mascots (no poking or dragging), same as the tray toggle |
 | `--no-tray` | No tray icon. Quit with Ctrl+C, `desktop-mascots quit`, or `--time` |
 | `--managed` | Linux only: let the window manager manage the windows instead of bypassing it (see below) |
 
@@ -60,11 +61,45 @@ Only one instance runs at a time. Running `desktop-mascots goose` again adds a
 goose to the mascots already on screen. `--time` and `--say` apply to the
 mascots that command adds, so a timed goose leaves without closing the others.
 
+## Manage the mascots on screen
+
+```bash
+desktop-mascots list                    # what's on screen, with ids
+desktop-mascots list --json             # the same, for scripts
+desktop-mascots add cat parrot          # add more (--time and --say work here too)
+desktop-mascots remove 3                # remove mascot #3
+desktop-mascots remove goose            # remove every goose
+desktop-mascots remove --all            # remove all of them (the app keeps running)
+```
+
+```
+ ID  MASCOT    DOING     WHERE         NOTES
+  2  cat       idle       3570,1180
+  3  horse     walk       3396,1180    leaves in 3s
+```
+
+Every mascot gets an id when it appears, and ids are never reused. Anywhere a
+command takes a target (`remove`, `say --to`, `steal --to`), an id picks that
+one mascot and a name picks every mascot of that kind. Unlike plain
+`desktop-mascots goose`, `add` never starts the app: it fails if nothing is
+running. Removing the last mascot leaves the app running so you can `add` more,
+unless it was started with `--time`.
+
+To experiment without touching the mascots you already have running, give a
+separate instance its own control socket. Every command run with the same
+variable talks to that instance:
+
+```bash
+DESKTOP_MASCOTS_SOCKET=sandbox desktop-mascots cat &
+DESKTOP_MASCOTS_SOCKET=sandbox desktop-mascots list
+```
+
 ## Make them talk
 
 ```bash
 desktop-mascots say "Lunch time!"                    # every mascot says it
 desktop-mascots say --to goose "HONK means hello"    # only the geese
+desktop-mascots say --to 3 "just you"                # only mascot #3 (see 'list')
 desktop-mascots say --seconds 10 "stays up for 10s"  # default: based on length
 make && desktop-mascots say "build passed" || desktop-mascots say --to goose "BUILD FAILED"
 git log -1 --format=%s | desktop-mascots say -       # '-' reads stdin
@@ -87,6 +122,7 @@ see errors.
 ```bash
 desktop-mascots steal                         # a random mascot, for 5 seconds
 desktop-mascots steal --to goose --seconds 10 # a goose, for 10 seconds (max 60)
+desktop-mascots steal --to 3                  # mascot #3
 ```
 
 The thief runs to your pointer and snatches it, pulling it into its mouth or
@@ -96,7 +132,8 @@ monitor, it yanks it over from where it is. While it's held, the pointer looks
 like the normal arrow being carried along.
 
 **To get it back early,** click the thief. Any click on a mascot makes it react,
-which ends the theft. `desktop-mascots quit` also works. Only one mascot can
+which ends the theft (not with `--click-through`, since clicks then pass through).
+`desktop-mascots quit` and `desktop-mascots remove <id>` also work. Only one mascot can
 hold the pointer at a time, and the command exits non-zero if it's already
 taken or there's no matching mascot. On Wayland, apps may not be allowed to
 move the pointer, so it may not work there.
@@ -108,12 +145,13 @@ move the pointer, so it may not work there.
 | `desktop_mascots/engine.py` | `Brain` base class: physics, the shared states (idle, walk, jump, fall, land, dizzy, dragged), blinking, gaze and speech bubbles. Pure Python, no Qt |
 | `desktop_mascots/art.py` | Shared painting helpers: outlined strokes, speech bubble, dizzy stars, icons |
 | `desktop_mascots/window.py` | The transparent, topmost, no-focus window, input handling and hit mask |
-| `desktop_mascots/app.py` | CLI (including `say`), tray icon and menus, and the herd of windows |
+| `desktop_mascots/app.py` | Startup, tray icon and menus, and the herd of windows (answers the commands) |
+| `desktop_mascots/cli.py` | The commands for a running app: `list`, `add`, `remove`, `say`, `steal`, `quit` |
 | `desktop_mascots/ipc.py` | Per-user local socket that the `say` command and a second launch use to reach the running app |
 | `desktop_mascots/quadruped/` | Shared four-legged rig: poses give shoulder/hip positions and foot targets, and the painter solves the knees with two-bone IK, so walk/trot/gallop/sit/lie/bow work for any species |
 | `desktop_mascots/characters/<name>/` | One mascot: `brain.py` (pose and behaviours), `art.py` (renderer), `__init__.py` (`CHARACTER` descriptor) |
 | `tools/preview.py` | Renders every mascot's animations to a PNG contact sheet, without opening a window |
-| `tests/test_mascots.py` | Headless behaviour tests, run for every mascot: `python -m unittest discover tests` |
+| `tests/` | Headless tests: every mascot's behaviour, plus the command handling with real windows offscreen. Run them with `python -m unittest discover tests` |
 
 ### Adding a mascot
 
