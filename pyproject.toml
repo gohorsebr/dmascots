@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "monkey-mascot"
+version = "0.1.0"
+description = "A monkey that wanders on top of your desktop without stealing focus."
+requires-python = ">=3.9"
+dependencies = ["PySide6-Essentials>=6.5"]
+
+[project.gui-scripts]
+monkey-mascot = "monkey_mascot.app:main"
+
+[tool.setuptools]
+packages = ["monkey_mascot"]
