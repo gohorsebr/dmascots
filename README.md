@@ -7,6 +7,7 @@ assets: every frame is drawn procedurally from a pose.
 | Mascot | What it gets up to |
 |---|---|
 | 🐒 **monkey** | walks around, scratches its head, eats bananas, hops |
+| 🪿 **goose** | waddles, grazes, preens, honks back when poked, charges at your cursor hissing |
 
 All mascots look at your cursor and blink. You can poke them (click), and you
 can grab and throw them (drag and release). A hard landing leaves them dizzy.
@@ -17,7 +18,7 @@ can grab and throw them (drag and release). A hard landing leaves them dizzy.
 python -m venv .venv
 .venv/bin/pip install -e .          # Windows: .venv\Scripts\pip install -e .
 .venv/bin/desktop-mascots           # one of each mascot
-.venv/bin/desktop-mascots monkey monkey --scale 1.5
+.venv/bin/desktop-mascots goose goose --scale 1.5
 ```
 
 `--managed` (Linux only) lets the window manager manage the windows instead of
