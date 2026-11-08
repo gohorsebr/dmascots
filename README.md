@@ -15,8 +15,15 @@ can grab and throw them (drag and release). A hard landing leaves them dizzy.
 ## Run
 
 ```bash
-python -m venv .venv
-.venv/bin/pip install -e .          # Windows: .venv\Scripts\pip install -e .
+make install                        # venv + editable install (or: pip install -e .)
+make run                            # one of each mascot
+make run ARGS="goose --time 5 --say hi"
+make test / make preview / make build / make clean   # `make` lists everything
+```
+
+Or call the installed command directly:
+
+```bash
 .venv/bin/desktop-mascots           # one of each mascot
 .venv/bin/desktop-mascots goose goose --scale 1.5
 .venv/bin/desktop-mascots goose --time 5 --say "Build finished!"   # pop in, say it, leave
@@ -107,8 +114,7 @@ windowed games won't.
 ## Ship a standalone app
 
 ```bash
-pip install pyinstaller
-pyinstaller --noconsole --onefile -n DesktopMascots desktop_mascots/__main__.py
+make build      # -> dist/DesktopMascots (a single ~60 MB file, PyInstaller)
 ```
 
 Build on each OS for that OS. PyInstaller doesn't cross-compile.
