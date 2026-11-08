@@ -9,6 +9,7 @@ assets: every frame is drawn procedurally from a pose.
 | 🐒 **monkey** | walks around, scratches its head, eats bananas, hops |
 | 🪿 **goose** | waddles, grazes, preens, honks back when poked, charges at your cursor hissing |
 | 🐦‍⬛ **crow** | struts and hops, pecks, caws, tilts its head at your cursor, flies across the screen, hoards shiny coins |
+| 🦜 **parrot** | waddles, dances to music only it can hear, whistles, preens, flies, and repeats messages you've sent it |
 | 🐕 **labrador** | walks, sniffs around, sits, begs for treats, naps, play-bows into zoomies, barks and wags when poked |
 | 🐕 **collie** | a border collie: same dog, more energy, and it "herds" your cursor with a low, staring stalk before dashing off |
 | 🐈 **cat** | an orange tabby that walks tail-up, sits with slow blinks, grooms, loafs, stretches and yawns, stalks and pounces on your cursor |

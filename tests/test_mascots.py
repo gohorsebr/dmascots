@@ -101,6 +101,18 @@ class MascotTest(unittest.TestCase):
             self.assertNotEqual(b.pose.bubble, "build finished")
         self.each(check)
 
+    def test_parrot_repeats_what_it_was_told(self):
+        b = CHARACTERS["parrot"].brain(500, B.floor, rng=random.Random(8))
+        step(b, 1)
+        b.say("deploy is green", 0.5, important=True)
+        step(b, 1)
+        said = set()
+        for _ in range(20):
+            b.go("mimic", 2.0)
+            step(b, 0.1)
+            said.add(b.pose.bubble)
+        self.assertIn("deploy is green", said)
+
 
 if __name__ == "__main__":
     unittest.main()

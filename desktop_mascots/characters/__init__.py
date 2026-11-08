@@ -6,5 +6,6 @@ from .dog import COLLIE, LABRADOR
 from .goose import CHARACTER as GOOSE
 from .horse import CHARACTER as HORSE
 from .monkey import CHARACTER as MONKEY
+from .parrot import CHARACTER as PARROT
 
-CHARACTERS: dict[str, Character] = {c.name: c for c in (MONKEY, GOOSE, CROW, LABRADOR, COLLIE, CAT, HORSE)}
+CHARACTERS: dict[str, Character] = {c.name: c for c in (MONKEY, GOOSE, CROW, PARROT, LABRADOR, COLLIE, CAT, HORSE)}
