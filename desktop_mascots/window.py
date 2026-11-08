@@ -1,4 +1,4 @@
-"""The transparent, always-on-top, never-focused window that hosts the monkey."""
+"""The transparent, always-on-top, never-focused window that hosts one mascot."""
 from __future__ import annotations
 
 import random
@@ -8,16 +8,14 @@ from PySide6.QtCore import QElapsedTimer, QPoint, QPointF, QSize, Qt, QTimer
 from PySide6.QtGui import QBitmap, QCursor, QGuiApplication, QImage, QPainter, QRegion
 from PySide6.QtWidgets import QMenu, QWidget
 
-from .brain import Bounds, Brain
-from .monkey import HALF_WIDTH, HEAD_Y, HEIGHT, paint_monkey
+from .engine import Bounds, Character
 
-BASE_W, BASE_H = 170, 190   # window size at scale 1 (room for jumps, swings, bubble)
 FEET_FROM_BOTTOM = 6
 FRAME_MS = 16
 
 
 class MascotWindow(QWidget):
-    def __init__(self, scale: float = 1.0, managed: bool = False, menu: QMenu | None = None):
+    def __init__(self, character: Character, scale: float = 1.0, managed: bool = False):
         flags = (Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
                  | Qt.WindowDoesNotAcceptFocus | Qt.NoDropShadowWindowHint)
         if sys.platform.startswith("linux") and not managed:
@@ -28,14 +26,16 @@ class MascotWindow(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WA_MacAlwaysShowToolWindow)
         self.setFocusPolicy(Qt.NoFocus)
-        self.setWindowTitle("Monkey Mascot")
+        self.setWindowTitle(f"Desktop mascot: {character.name}")
         self.setCursor(Qt.OpenHandCursor)
 
+        self.character = character
         self.s = scale
-        self.setFixedSize(round(BASE_W * scale), round(BASE_H * scale))
-        self.menu = menu
+        self.base_h = character.size[1]
+        self.setFixedSize(round(character.size[0] * scale), round(self.base_h * scale))
+        self.menu: QMenu | None = None
         self.click_through = False
-        # X11 hit-tests the whole rectangle, so shape the window to the monkey.
+        # X11 hit-tests the whole rectangle, so shape the window to the mascot.
         # Windows layered windows already let clicks through fully transparent pixels.
         self._use_mask = QGuiApplication.platformName() == "xcb"
         self._frame = QImage()
@@ -43,9 +43,9 @@ class MascotWindow(QWidget):
         screen = QGuiApplication.primaryScreen()
         self._screen = screen
         g = screen.availableGeometry()
-        margin = HALF_WIDTH * scale
-        self.brain = Brain(random.uniform(g.left() + margin, g.right() - margin),
-                           g.top() + HEIGHT * scale)
+        margin = character.half_width * scale
+        self.brain = character.brain(random.uniform(g.left() + margin, g.right() - margin),
+                                     g.top() + character.height * scale)
 
         self._press: QPoint | None = None
         self._grab_offset = QPointF()
@@ -69,17 +69,18 @@ class MascotWindow(QWidget):
         probe = QCursor.pos() if self._dragging else QPoint(int(b.x), int(b.y) - 5)
         self._screen = QGuiApplication.screenAt(probe) or self._screen
         g = self._screen.availableGeometry()
-        m = HALF_WIDTH * self.s
+        m = self.character.half_width * self.s
         return Bounds(left=g.left() + m, right=g.right() + 1 - m,
-                      top=g.top() + HEIGHT * self.s, floor=g.bottom() + 1)
+                      top=g.top() + self.character.height * self.s, floor=g.bottom() + 1)
 
     def _tick(self) -> None:
         dt = self._elapsed.restart() / 1000.0
         b = self.brain
         cur = QCursor.pos()
-        b.update(dt, self._bounds(), cursor=(cur.x() - b.x, cur.y() - (b.y - HEAD_Y * self.s)))
+        eye_y = b.y - self.character.eye_y * self.s
+        b.update(dt, self._bounds(), cursor=(cur.x() - b.x, cur.y() - eye_y))
         pos = QPoint(round(b.x - self.width() / 2),
-                     round(b.y - (BASE_H - FEET_FROM_BOTTOM) * self.s))
+                     round(b.y - (self.base_h - FEET_FROM_BOTTOM) * self.s))
         if pos != self.pos():
             self.move(pos)
         self._render()
@@ -94,7 +95,7 @@ class MascotWindow(QWidget):
         p = QPainter(self._frame)
         p.translate(self.width() / 2, self.height() - FEET_FROM_BOTTOM * self.s)
         p.scale(self.s, self.s)
-        paint_monkey(p, self.brain.pose, self.brain.facing)
+        self.character.paint(p, self.brain.pose, self.brain.facing)
         p.end()
         if self._use_mask and not self.click_through:
             self._update_mask()
@@ -152,6 +153,8 @@ class MascotWindow(QWidget):
         self.brain.paused = on
 
     def set_click_through(self, on: bool) -> None:
+        if on == self.click_through:
+            return
         self.click_through = on
         if on:
             self.clearMask()
