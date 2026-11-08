@@ -19,10 +19,18 @@ python -m venv .venv
 .venv/bin/pip install -e .          # Windows: .venv\Scripts\pip install -e .
 .venv/bin/desktop-mascots           # one of each mascot
 .venv/bin/desktop-mascots goose goose --scale 1.5
+.venv/bin/desktop-mascots goose --time 5 --say "Build finished!"   # pop in, say it, leave
 ```
 
-`--managed` (Linux only) lets the window manager manage the windows instead of
-bypassing it (see below).
+| Option | What it does |
+|---|---|
+| `--time SECONDS` | The mascots leave after this many seconds. If the app was started this way, it exits once they're gone |
+| `--say TEXT` | The mascots start by saying `TEXT` (`-` reads it from stdin). With `--time`, the bubble stays up until they leave |
+| `--scale N` | Size multiplier |
+| `--managed` | Linux only: let the window manager manage the windows instead of bypassing it (see below) |
+
+`--time` and `--say` together make a quick desktop notification, e.g.
+`make; desktop-mascots goose --time 6 --say "make exited with $?"`.
 
 **Controls:** left-click to poke, drag to carry and throw. Right-click a mascot,
 or use the tray icon, for **Say something…**, **Add** (spawn another),
@@ -30,7 +38,8 @@ or use the tray icon, for **Say something…**, **Add** (spawn another),
 Ctrl+C in the terminal also quits.
 
 Only one instance runs at a time. Running `desktop-mascots goose` again adds a
-goose to the mascots already on screen.
+goose to the mascots already on screen. `--time` and `--say` apply to the
+mascots that command adds, so a timed goose leaves without closing the others.
 
 ## Make them talk
 
