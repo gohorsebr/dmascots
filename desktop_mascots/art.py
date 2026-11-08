@@ -117,6 +117,25 @@ def _bubble_layout(text: str) -> tuple[str, int, float, float]:
     return text, flags, min(r.width(), BUBBLE_TEXT_W), r.height()
 
 
+def paint_zzz(p: QPainter, x: float, y: float, phase: float, facing: int = 1,
+              glyphs: str = "zzz", color: QColor = OUTLINE) -> None:
+    """Glyphs (sleepy z's, music notes) drifting up and away from (x, y); drawn unmirrored."""
+    p.save()
+    p.scale(facing, 1)          # undo the caller's mirroring so the letters read correctly
+    x *= facing
+    font = QFont()
+    font.setBold(True)
+    for i, glyph in enumerate(glyphs):
+        k = (phase * 0.6 + i / len(glyphs)) % 1.0
+        font.setPixelSize(round(7 + 7 * k))
+        p.setFont(font)
+        c = QColor(color)
+        c.setAlphaF(max(0.0, min(1.0, 1.4 - 1.4 * k)))
+        p.setPen(c)
+        p.drawText(QPointF(x + facing * (4 + 14 * k), y - 4 - 22 * k), glyph)
+    p.restore()
+
+
 def paint_bubble(p: QPainter, text: str, ax: float, ay: float, facing: int,
                  outline: QColor = OUTLINE, limit: float = 117.0) -> None:
     """Speech bubble whose tail points at (ax, ay); drawn unmirrored. Wraps long text."""

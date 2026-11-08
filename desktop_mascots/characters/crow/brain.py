@@ -4,13 +4,11 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from ...engine import BasePose, Bounds, Brain, bump, clamp, ease, keyframes, lerp, lerp2
+from ...engine import BasePose, Bounds, Brain, bump, clamp, ease, keyframes, lerp, lerp2  # noqa: F401
 
 REST_HEAD = (16.0, -54.0)
 CAW_TIME = 1.3
 SHINY_TIME = 4.6
-FLY_SPEED = 340.0       # px/s across the screen
-FLY_RANGE = 900.0       # longest hop between perches, px
 TILTS = (-22.0, 8.0, -30.0, 14.0, -12.0, 4.0)  # jerky, bird-like head angles
 
 
@@ -172,34 +170,13 @@ class CrowBrain(Brain):
         if self.done:
             self.go_idle()
 
-    def _fly(self, dt: float, b: Bounds, p: CrowPose) -> None:
-        if self.entered:
-            lo, hi = max(b.left, self.x - FLY_RANGE), min(b.right, self.x + FLY_RANGE)
-            target = self.x
-            for _ in range(8):  # somewhere at least a little way off
-                target = self.rng.uniform(lo, hi)
-                if abs(target - self.x) > min(150.0, (hi - lo) / 3):
-                    break
-            self._fly_from, self._fly_to = self.x, target
-            self._fly_h = min(self.rng.uniform(70, 230), max(0.0, b.floor - b.top))
-            self.duration = max(0.8, abs(target - self.x) / FLY_SPEED)
-            if target != self.x:
-                self.facing = 1 if target > self.x else -1
-        prog = clamp(self.t / self.duration, 0.0, 1.0)
-        self.x = lerp(self._fly_from, self._fly_to, ease(prog) * 0.3 + prog * 0.7)
-        self.y = b.floor - self._fly_h * math.sin(math.pi * prog)
-
-        c = self.clock
-        p.grounded = False
+    def pose_flight(self, p: CrowPose, prog: float) -> None:
         descending = prog > 0.5
         # strong flapping on the way up, slower glide-flaps coming down
-        p.wing = 0.35 + 0.65 * math.sin(c * (16 if descending else 24))
+        p.wing = 0.35 + 0.65 * math.sin(self.clock * (16 if descending else 24))
         p.lean = 12 if not descending else 4
         landing = ease((prog - 0.8) / 0.2)
         p.leg_front = lerp(-55.0, 10.0, landing)       # legs tucked back, then reach for the ground
         p.leg_back = lerp(-65.0, -5.0, landing)
         p.tail = -4 + 10 * landing
         p.head = (REST_HEAD[0] + 2, REST_HEAD[1] + 2)
-        if prog >= 1.0:
-            self.y = b.floor
-            self.go("land", 0.2)

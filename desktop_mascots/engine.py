@@ -100,6 +100,10 @@ class Brain:
     LINES: ClassVar[tuple[str, ...]] = ("Hi!",)
     # states where the feet are off the floor and the state itself moves the mascot
     AIRBORNE: ClassVar[tuple[str, ...]] = ("air", "dragged")
+    # flyers: add "fly" to CHOICES and AIRBORNE, and implement pose_flight
+    FLY_SPEED: ClassVar[float] = 340.0      # px/s across the screen
+    FLY_RANGE: ClassVar[float] = 900.0      # longest hop between perches, px
+    FLY_HEIGHT: ClassVar[tuple[float, float]] = (70.0, 230.0)
     # (weight, state, (min_seconds, max_seconds)) picked whenever idle time runs out
     CHOICES: ClassVar[tuple] = (
         (45, "walk", (2.5, 7.0)),
@@ -129,6 +133,7 @@ class Brain:
         self._bubble: str | None = None
         self._bubble_until = 0.0
         self._bubble_important = False
+        self.heard: list[str] = []  # recent messages sent to it (parrots repeat these)
 
     # ----------------------------------------------------------- events
     @property
@@ -146,6 +151,8 @@ class Brain:
             return
         self._bubble, self._bubble_until = text, self.clock + seconds
         self._bubble_important = important
+        if important:
+            self.heard = (self.heard + [text])[-6:]
 
     def poke(self) -> None:
         self.say(self.rng.choice(self.LINES))
@@ -335,6 +342,32 @@ class Brain:
         p.swing = self._swing * self.facing   # painters mirror when facing left
         p.eyes = "wide"
         self.pose_dragged(p)
+
+    def pose_flight(self, p, prog: float) -> None:
+        """Pose while flying; prog runs 0 (take-off) -> 1 (touch-down)."""
+
+    def _fly(self, dt: float, b: Bounds, p) -> None:
+        """Fly in an arc to another spot on the floor, then land."""
+        if self.entered:
+            lo, hi = max(b.left, self.x - self.FLY_RANGE), min(b.right, self.x + self.FLY_RANGE)
+            target = self.x
+            for _ in range(8):  # somewhere at least a little way off
+                target = self.rng.uniform(lo, hi)
+                if abs(target - self.x) > min(150.0, (hi - lo) / 3):
+                    break
+            self._fly_from, self._fly_to = self.x, target
+            self._fly_h = min(self.rng.uniform(*self.FLY_HEIGHT), max(0.0, b.floor - b.top))
+            self.duration = max(0.8, abs(target - self.x) / self.FLY_SPEED)
+            if target != self.x:
+                self.facing = 1 if target > self.x else -1
+        prog = clamp(self.t / self.duration, 0.0, 1.0)
+        self.x = lerp(self._fly_from, self._fly_to, ease(prog) * 0.3 + prog * 0.7)
+        self.y = b.floor - self._fly_h * math.sin(math.pi * prog)
+        p.grounded = False
+        self.pose_flight(p, prog)
+        if prog >= 1.0:
+            self.y = b.floor
+            self.go("land", 0.2)
 
     # ----------------------------------------------------------- face
     def _face(self, dt: float, p) -> None:

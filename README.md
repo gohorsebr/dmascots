@@ -80,6 +80,7 @@ see errors.
 | `desktop_mascots/window.py` | The transparent, topmost, no-focus window, input handling and hit mask |
 | `desktop_mascots/app.py` | CLI (including `say`), tray icon and menus, and the herd of windows |
 | `desktop_mascots/ipc.py` | Per-user local socket that the `say` command and a second launch use to reach the running app |
+| `desktop_mascots/quadruped/` | Shared four-legged rig: poses give shoulder/hip positions and foot targets, and the painter solves the knees with two-bone IK, so walk/trot/gallop/sit/lie/bow work for any species |
 | `desktop_mascots/characters/<name>/` | One mascot: `brain.py` (pose and behaviours), `art.py` (renderer), `__init__.py` (`CHARACTER` descriptor) |
 | `tools/preview.py` | Renders every mascot's animations to a PNG contact sheet, without opening a window |
 | `tests/test_mascots.py` | Headless behaviour tests, run for every mascot: `python -m unittest discover tests` |
@@ -95,6 +96,12 @@ see errors.
    The origin is between the feet, y points down, and the mascot faces +x.
 3. Expose a `CHARACTER = Character(...)` and register it in `characters/__init__.py`.
 4. Run `python tools/preview.py` to see every pose at once, then run the tests.
+
+Four-legged animals can start from the rig in `quadruped/`. Subclass `QuadBrain`
+with a `Rig` (joint positions and bone lengths) and `QuadArt` (coat colours, head,
+tail and markings), and they get gaits, sitting, lying down, play bows, zoomies
+and the airborne poses for free. The dogs, cat and horse are all built this way.
+Flying birds add `"fly"` to `CHOICES` and `AIRBORNE` and implement `pose_flight`.
 
 ## How it stays on top without taking focus
 
