@@ -11,6 +11,7 @@ assets: every frame is drawn procedurally from a pose.
 | 🐦‍⬛ **crow** | struts and hops, pecks, caws, tilts its head at your cursor, flies across the screen, hoards shiny coins |
 | 🐕 **labrador** | walks, sniffs around, sits, begs for treats, naps, play-bows into zoomies, barks and wags when poked |
 | 🐕 **collie** | a border collie: same dog, more energy, and it "herds" your cursor with a low, staring stalk before dashing off |
+| 🐈 **cat** | an orange tabby that walks tail-up, sits with slow blinks, grooms, loafs, stretches and yawns, stalks and pounces on your cursor |
 
 All mascots look at your cursor and blink. You can poke them (click), and you
 can grab and throw them (drag and release). A hard landing leaves them dizzy.
