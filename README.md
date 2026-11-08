@@ -40,15 +40,21 @@ Or call the installed command directly:
 | `--time SECONDS` | The mascots leave after this many seconds. If the app was started this way, it exits once they're gone |
 | `--say TEXT` | The mascots start by saying `TEXT` (`-` reads it from stdin). With `--time`, the bubble stays up until they leave |
 | `--scale N` | Size multiplier |
+| `--menu` | Right-clicking a mascot opens its menu. Off by default, so right-clicks are ignored |
+| `--no-tray` | No tray icon. Quit with Ctrl+C, `desktop-mascots quit`, or `--time` |
 | `--managed` | Linux only: let the window manager manage the windows instead of bypassing it (see below) |
 
 `--time` and `--say` together make a quick desktop notification, e.g.
 `make; desktop-mascots goose --time 6 --say "make exited with $?"`.
 
-**Controls:** left-click to poke, drag to carry and throw. Right-click a mascot,
-or use the tray icon, for **Say something…**, **Add** (spawn another),
-**Shoo** (remove that one), **Stay put**, **Click-through** and **Quit**.
-Ctrl+C in the terminal also quits.
+**Controls:** left-click to poke, drag to carry and throw. The tray icon has
+**Say something…**, **Add** (spawn another), **Stay put**, **Click-through** and
+**Quit**. With `--menu`, right-clicking a mascot opens the same menu, plus
+**Shoo** to remove just that one.
+
+**Quitting:** use the tray icon's **Quit**, Ctrl+C in the terminal, `kill`, or
+`desktop-mascots quit` from any terminal. The last one works even when the app
+was started in the background or with `--no-tray`.
 
 Only one instance runs at a time. Running `desktop-mascots goose` again adds a
 goose to the mascots already on screen. `--time` and `--say` apply to the

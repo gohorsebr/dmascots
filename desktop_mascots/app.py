@@ -18,13 +18,16 @@ def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["say"]:
         return say_command(argv[1:])
+    if argv[:1] == ["quit"]:
+        return quit_command(argv[1:])
 
     from .characters import CHARACTERS
 
     names = ", ".join(CHARACTERS)
     parser = argparse.ArgumentParser(
         prog="desktop-mascots", description="Mascots that live on top of your windows.",
-        epilog="Send them text with: desktop-mascots say [--to MASCOT] TEXT")
+        epilog="Send them text with: desktop-mascots say [--to MASCOT] TEXT. "
+               "Close them with: desktop-mascots quit (or Ctrl+C).")
     parser.add_argument("mascots", nargs="*", metavar="MASCOT",
                         help=f"mascots to spawn, repeat for more ({names}); default: one of each")
     parser.add_argument("--scale", type=float, default=1.0, help="size multiplier (default 1.0)")
@@ -32,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="the mascots leave after this many seconds (and the app exits if none are left)")
     parser.add_argument("--say", metavar="TEXT",
                         help="the mascots start by saying TEXT ('-' reads it from stdin)")
+    parser.add_argument("--menu", action="store_true",
+                        help="right-clicking a mascot opens its menu (off by default)")
+    parser.add_argument("--no-tray", action="store_true",
+                        help="no tray icon; quit with Ctrl+C or 'desktop-mascots quit'")
     parser.add_argument("--managed", action="store_true",
                         help="Linux/X11: let the window manager manage the windows instead of bypassing it")
     args = parser.parse_args(argv)
@@ -63,9 +70,11 @@ def main(argv: list[str] | None = None) -> int:
 
     app.setApplicationName("Desktop Mascots")
     app.setQuitOnLastWindowClosed(False)
-    signal.signal(signal.SIGINT, lambda *_: app.quit())  # Ctrl+C in the terminal
+    signal.signal(signal.SIGINT, lambda *_: app.quit())   # Ctrl+C in the terminal
+    signal.signal(signal.SIGTERM, lambda *_: app.quit())  # `kill`: still exit cleanly
 
-    herd = Herd(app, CHARACTERS, scale=args.scale, managed=args.managed)
+    herd = Herd(app, CHARACTERS, scale=args.scale, managed=args.managed,
+                menu=args.menu, tray=not args.no_tray)
     herd.quit_when_empty = args.time is not None
     server = Server(herd.handle, app)
     if not server.listening:
@@ -74,6 +83,20 @@ def main(argv: list[str] | None = None) -> int:
     for name in wanted:
         herd.spawn(CHARACTERS[name], lifetime=args.time, say=args.say)
     return app.exec()
+
+
+def quit_command(argv: list[str]) -> int:
+    argparse.ArgumentParser(prog="desktop-mascots quit",
+                            description="Close the running mascots.").parse_args(argv)
+    from PySide6.QtCore import QCoreApplication
+
+    from .ipc import send
+
+    _app = QCoreApplication(sys.argv[:1])  # noqa: F841 -- QLocalSocket needs an app object
+    if send({"cmd": "quit"}) is None:
+        print("desktop-mascots isn't running", file=sys.stderr)
+        return 1
+    return 0
 
 
 def say_command(argv: list[str]) -> int:
@@ -114,13 +137,14 @@ def say_command(argv: list[str]) -> int:
 class Herd:
     """All live mascot windows plus the menus that control them."""
 
-    def __init__(self, app, characters, scale: float, managed: bool):
+    def __init__(self, app, characters, scale: float, managed: bool, menu: bool = False, tray: bool = True):
         from PySide6.QtGui import QAction, QIcon
         from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
         from .art import render_icon
 
         self.app, self.characters, self.scale, self.managed = app, characters, scale, managed
+        self.menu_enabled = menu      # right-click menu on the mascots themselves
         self.windows: list = []
         self.quit_when_empty = False   # set when started with --time: exit once all have left
 
@@ -141,7 +165,7 @@ class Herd:
         first = next(iter(self.icons.values()))
         app.setWindowIcon(first)
         self.tray = None
-        if QSystemTrayIcon.isSystemTrayAvailable():
+        if tray and QSystemTrayIcon.isSystemTrayAvailable():
             self.tray_menu = QMenu()
             self.tray_menu.addAction("Say something…", lambda: self.ask_and_say(self.windows))
             self._add_shared(self.tray_menu)
@@ -165,11 +189,12 @@ class Herd:
         from .window import MascotWindow
 
         w = MascotWindow(character, scale=self.scale, managed=self.managed)
-        w.menu = QMenu(w)
-        w.menu.addAction("Say something…", lambda: self.ask_and_say([w]))
-        w.menu.addAction(self.icons[character.name], f"Shoo the {character.name}", lambda: self.remove(w))
-        w.menu.addSeparator()
-        self._add_shared(w.menu)
+        if self.menu_enabled:     # otherwise right-clicks are simply ignored
+            w.menu = QMenu(w)
+            w.menu.addAction("Say something…", lambda: self.ask_and_say([w]))
+            w.menu.addAction(self.icons[character.name], f"Shoo the {character.name}", lambda: self.remove(w))
+            w.menu.addSeparator()
+            self._add_shared(w.menu)
         w.set_paused(self.stay.isChecked())
         w.show()
         w.set_click_through(self.through.isChecked())
@@ -225,6 +250,10 @@ class Herd:
             for n in names:
                 self.spawn(self.characters[n], lifetime=lifetime, say=str(say) if say else None)
             return {"ok": True, "count": len(names)}
+        if cmd == "quit":
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(0, self.app.quit)   # after the reply has gone out
+            return {"ok": True, "count": len(self.windows)}
         return {"ok": False, "error": f"unknown command: {cmd!r}"}
 
 
