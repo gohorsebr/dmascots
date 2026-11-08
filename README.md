@@ -25,8 +25,34 @@ python -m venv .venv
 bypassing it (see below).
 
 **Controls:** left-click to poke, drag to carry and throw. Right-click a mascot,
-or use the tray icon, for **Add** (spawn another), **Shoo** (remove that one),
-**Stay put**, **Click-through** and **Quit**. Ctrl+C in the terminal also quits.
+or use the tray icon, for **Say something…**, **Add** (spawn another),
+**Shoo** (remove that one), **Stay put**, **Click-through** and **Quit**.
+Ctrl+C in the terminal also quits.
+
+Only one instance runs at a time. Running `desktop-mascots goose` again adds a
+goose to the mascots already on screen.
+
+## Make them talk
+
+```bash
+desktop-mascots say "Lunch time!"                    # every mascot says it
+desktop-mascots say --to goose "HONK means hello"    # only the geese
+desktop-mascots say --seconds 10 "stays up for 10s"  # default: based on length
+make && desktop-mascots say "build passed" || desktop-mascots say --to goose "BUILD FAILED"
+git log -1 --format=%s | desktop-mascots say -       # '-' reads stdin
+```
+
+Long text wraps, up to 5 lines, then gets cut with `…`. A message you send
+isn't replaced by the mascots' own chatter (pokes, honks) while it's showing.
+The command exits non-zero if the app isn't running, or if no mascot of that
+kind is on screen, so it works in scripts.
+
+It talks to the running app over a local socket: a Unix socket on Linux, a
+named pipe on Windows. Only your own user can connect to it. The protocol is
+one JSON object per line (see `desktop_mascots/ipc.py`), so anything can send
+messages, not just the CLI. On Windows the `desktop-mascots` launcher is a GUI
+script and prints nothing, so use `python -m desktop_mascots say ...` there to
+see errors.
 
 ## Layout
 
@@ -35,7 +61,8 @@ or use the tray icon, for **Add** (spawn another), **Shoo** (remove that one),
 | `desktop_mascots/engine.py` | `Brain` base class: physics, the shared states (idle, walk, jump, fall, land, dizzy, dragged), blinking, gaze and speech bubbles. Pure Python, no Qt |
 | `desktop_mascots/art.py` | Shared painting helpers: outlined strokes, speech bubble, dizzy stars, icons |
 | `desktop_mascots/window.py` | The transparent, topmost, no-focus window, input handling and hit mask |
-| `desktop_mascots/app.py` | CLI, tray icon and menus, and the herd of windows |
+| `desktop_mascots/app.py` | CLI (including `say`), tray icon and menus, and the herd of windows |
+| `desktop_mascots/ipc.py` | Per-user local socket that the `say` command and a second launch use to reach the running app |
 | `desktop_mascots/characters/<name>/` | One mascot: `brain.py` (pose and behaviours), `art.py` (renderer), `__init__.py` (`CHARACTER` descriptor) |
 | `tools/preview.py` | Renders every mascot's animations to a PNG contact sheet, without opening a window |
 | `tests/test_mascots.py` | Headless behaviour tests, run for every mascot: `python -m unittest discover tests` |

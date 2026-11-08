@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from functools import lru_cache
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPixmap, QPolygonF
@@ -58,17 +59,49 @@ def paint_stars(p: QPainter, cx: float, cy: float, angle: float, rx: float = 25,
         p.drawPolygon(QPolygonF(pts))
 
 
-def paint_bubble(p: QPainter, text: str, ax: float, ay: float, facing: int,
-                 outline: QColor = OUTLINE, limit: float = 82.0) -> None:
-    """Speech bubble whose tail points at (ax, ay); drawn unmirrored."""
-    p.save()
-    p.setRenderHint(QPainter.Antialiasing, True)
+BUBBLE_TEXT_W = 196.0     # wrap width
+BUBBLE_LINES = 5          # longer messages are cut with an ellipsis
+
+
+def _bubble_font() -> QFont:
     font = QFont()
     font.setBold(True)
     font.setPixelSize(11)
-    p.setFont(font)
-    w = QFontMetricsF(font).horizontalAdvance(text) + 14
-    h = 20.0
+    return font
+
+
+@lru_cache(maxsize=64)
+def _bubble_layout(text: str) -> tuple[str, int, float, float]:
+    """Wrap (and if needed truncate) text: returns (shown_text, flags, width, height)."""
+    fm = QFontMetricsF(_bubble_font())
+    max_h = fm.lineSpacing() * BUBBLE_LINES + 1
+
+    def measure(t: str, flags: int) -> QRectF:
+        return fm.boundingRect(QRectF(0, 0, BUBBLE_TEXT_W, 1e5), flags | int(Qt.AlignCenter), t)
+
+    flags = int(Qt.TextWordWrap)
+    if measure(text, flags).width() > BUBBLE_TEXT_W:   # a word too long to wrap (URL, path…)
+        flags = int(Qt.TextWrapAnywhere)
+    if measure(text, flags).height() > max_h:
+        anywhere = flags == int(Qt.TextWrapAnywhere)
+        parts = list(text) if anywhere else text.split(" ")
+        joiner = "" if anywhere else " "
+        while parts and measure(joiner.join(parts) + "…", flags).height() > max_h:
+            parts.pop()
+        text = joiner.join(parts).rstrip() + "…"
+    r = measure(text, flags)
+    return text, flags, min(r.width(), BUBBLE_TEXT_W), r.height()
+
+
+def paint_bubble(p: QPainter, text: str, ax: float, ay: float, facing: int,
+                 outline: QColor = OUTLINE, limit: float = 117.0) -> None:
+    """Speech bubble whose tail points at (ax, ay); drawn unmirrored. Wraps long text."""
+    p.save()
+    p.setRenderHint(QPainter.Antialiasing, True)
+    p.setFont(_bubble_font())
+    text, flags, tw, th = _bubble_layout(text)
+    w = tw + 16
+    h = th + 9
     x = ax - 8 if facing > 0 else ax + 8 - w
     x = max(-limit, min(limit - w, x))
     rect = QRectF(x, ay - 8 - h, w, h)
@@ -80,7 +113,7 @@ def paint_bubble(p: QPainter, text: str, ax: float, ay: float, facing: int,
     p.setBrush(WHITE)
     p.drawPath(shape.united(tail))
     p.setPen(outline)
-    p.drawText(rect, Qt.AlignCenter, text)
+    p.drawText(rect, flags | int(Qt.AlignCenter), text)
     p.restore()
 
 

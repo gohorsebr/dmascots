@@ -80,6 +80,17 @@ class MascotTest(unittest.TestCase):
             step(b, 0.1)
             self.assertIn(b.pose.bubble, char.brain.LINES)
 
+    def test_sent_message_is_not_overwritten_by_chatter(self):
+        for char in self.each():
+            b = char.brain(500, B.floor, rng=random.Random(6))
+            step(b, 1)
+            b.say("build finished", 3.0, important=True)
+            b.poke()                     # pokes and honks would normally talk
+            step(b, 1.0)
+            self.assertEqual(b.pose.bubble, "build finished")
+            step(b, 2.5)
+            self.assertNotEqual(b.pose.bubble, "build finished")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -48,7 +48,7 @@ class Character:
     height: float               # feet -> top of head
     eye_y: float                # feet -> eyes (the gaze follows the cursor from here)
     icon_box: tuple[float, float, float]  # (cx, cy, extent) framed by the tray icon
-    size: tuple[int, int] = (170, 190)    # window size at scale 1
+    size: tuple[int, int] = (240, 226)    # window size at scale 1 (room for a wrapped bubble)
     previews: tuple = ()        # (label, state, duration, at) extra scenes for tools/preview.py
 
 
@@ -110,6 +110,7 @@ class Brain:
         self._blink_until = -1.0
         self._bubble: str | None = None
         self._bubble_until = 0.0
+        self._bubble_important = False
 
     # ----------------------------------------------------------- events
     @property
@@ -121,8 +122,12 @@ class Brain:
         """True on the first update of the current state."""
         return self.t <= self._dt + 1e-9
 
-    def say(self, text: str, seconds: float = 1.6) -> None:
+    def say(self, text: str, seconds: float = 1.6, important: bool = False) -> None:
+        """Show a speech bubble. Chatter never replaces an important message still showing."""
+        if not important and self._bubble_important and self.clock < self._bubble_until:
+            return
         self._bubble, self._bubble_until = text, self.clock + seconds
+        self._bubble_important = important
 
     def poke(self) -> None:
         self.say(self.rng.choice(self.LINES))

@@ -59,6 +59,13 @@ def poked(char):
     return _step(b, 0.1)
 
 
+def said(char):
+    b = _brain(char)
+    b.say("Your build finished in 3m12s with 0 errors and 2 warnings. Time for a banana break?", 9,
+          important=True)
+    return _step(b, 0.1)
+
+
 def thrown(char):
     b = _brain(char)
     b.y = FLOOR - 400
@@ -81,13 +88,14 @@ def scenes(char):
     yield "land", lambda: scene(char, "land", 0.22, 0.03)
     yield "dizzy", lambda: scene(char, "dizzy", 2.6, 1.0)
     yield "poked", lambda: poked(char)
+    yield "say (sent text)", lambda: said(char)
 
 
 def main() -> None:
     out = Path(sys.argv[1] if len(sys.argv) > 1 else "preview.png")
     chars = [CHARACTERS[n] for n in sys.argv[2:]] or list(CHARACTERS.values())
     QGuiApplication(sys.argv[:1])
-    cols, cw, ch, s = 6, 190, 215, 1.4
+    cols, cw, ch, s = 5, 250, 250, 1.4
     sections = [(c, list(scenes(c))) for c in chars]
     rows = sum((len(sc) + cols - 1) // cols for _, sc in sections)
     title_h = 28

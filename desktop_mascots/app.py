@@ -6,13 +6,25 @@ import os
 import signal
 import sys
 
+MAX_TEXT = 500
+
+
+def reading_time(text: str) -> float:
+    """How long a bubble stays up: long enough to read, never forever."""
+    return min(15.0, max(2.5, 1.5 + 0.06 * len(text)))
+
 
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["say"]:
+        return say_command(argv[1:])
+
     from .characters import CHARACTERS
 
     names = ", ".join(CHARACTERS)
-    parser = argparse.ArgumentParser(prog="desktop-mascots",
-                                     description="Mascots that live on top of your windows.")
+    parser = argparse.ArgumentParser(
+        prog="desktop-mascots", description="Mascots that live on top of your windows.",
+        epilog="Send them text with: desktop-mascots say [--to MASCOT] TEXT")
     parser.add_argument("mascots", nargs="*", metavar="MASCOT",
                         help=f"mascots to spawn, repeat for more ({names}); default: one of each")
     parser.add_argument("--scale", type=float, default=1.0, help="size multiplier (default 1.0)")
@@ -29,15 +41,64 @@ def main(argv: list[str] | None = None) -> int:
 
     from PySide6.QtWidgets import QApplication
 
+    from .ipc import Server, send
+
     app = QApplication(sys.argv[:1])
+    wanted = args.mascots or list(CHARACTERS)
+
+    # Already running? Hand the new mascots to that instance instead of starting a second one.
+    reply = send({"cmd": "spawn", "mascots": wanted})
+    if reply is not None:
+        print(f"desktop-mascots is already running; added {', '.join(wanted)}.")
+        return 0
+
     app.setApplicationName("Desktop Mascots")
     app.setQuitOnLastWindowClosed(False)
     signal.signal(signal.SIGINT, lambda *_: app.quit())  # Ctrl+C in the terminal
 
     herd = Herd(app, CHARACTERS, scale=args.scale, managed=args.managed)
-    for name in args.mascots or CHARACTERS:
+    server = Server(herd.handle, app)
+    if not server.listening:
+        print("warning: couldn't open the control socket; 'say' won't reach this instance",
+              file=sys.stderr)
+    for name in wanted:
         herd.spawn(CHARACTERS[name])
     return app.exec()
+
+
+def say_command(argv: list[str]) -> int:
+    from .characters import CHARACTERS
+
+    parser = argparse.ArgumentParser(prog="desktop-mascots say",
+                                     description="Make the running mascots say something.")
+    parser.add_argument("text", nargs="+", help="what to say ('-' reads it from stdin)")
+    parser.add_argument("--to", default="all", metavar="MASCOT",
+                        help=f"who says it: all (default), {', '.join(CHARACTERS)}")
+    parser.add_argument("--seconds", type=float, help="how long the bubble stays (default: based on length)")
+    args = parser.parse_args(argv)
+    if args.to != "all" and args.to not in CHARACTERS:
+        parser.error(f"unknown mascot: {args.to}")
+    text = sys.stdin.read() if args.text == ["-"] else " ".join(args.text)
+    text = " ".join(text.split())  # one paragraph; the bubble wraps it
+    if not text:
+        parser.error("nothing to say")
+
+    from PySide6.QtCore import QCoreApplication
+
+    from .ipc import send
+
+    _app = QCoreApplication(sys.argv[:1])  # noqa: F841 -- QLocalSocket needs an app object
+    reply = send({"cmd": "say", "text": text, "to": args.to, "seconds": args.seconds})
+    if reply is None:
+        print("desktop-mascots isn't running (start it with: desktop-mascots)", file=sys.stderr)
+        return 1
+    if not reply.get("ok"):
+        print(f"error: {reply.get('error')}", file=sys.stderr)
+        return 1
+    if reply.get("count", 0) == 0:
+        print(f"no {args.to} on screen right now", file=sys.stderr)
+        return 1
+    return 0
 
 
 class Herd:
@@ -49,7 +110,7 @@ class Herd:
 
         from .art import render_icon
 
-        self.app, self.scale, self.managed = app, scale, managed
+        self.app, self.characters, self.scale, self.managed = app, characters, scale, managed
         self.windows: list = []
 
         self.add_menu = QMenu("Add")
@@ -71,6 +132,7 @@ class Herd:
         self.tray = None
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray_menu = QMenu()
+            self.tray_menu.addAction("Say something…", lambda: self.ask_and_say(self.windows))
             self._add_shared(self.tray_menu)
             self.tray = QSystemTrayIcon(first)
             self.tray.setToolTip("Desktop Mascots")
@@ -91,6 +153,7 @@ class Herd:
 
         w = MascotWindow(character, scale=self.scale, managed=self.managed)
         w.menu = QMenu(w)
+        w.menu.addAction("Say something…", lambda: self.ask_and_say([w]))
         w.menu.addAction(self.icons[character.name], f"Shoo the {character.name}", lambda: self.remove(w))
         w.menu.addSeparator()
         self._add_shared(w.menu)
@@ -105,6 +168,38 @@ class Herd:
         w.deleteLater()
         if not self.windows and self.tray is None:
             self.app.quit()  # nothing left to click on
+
+    def say(self, text: str, windows, seconds: float | None = None) -> int:
+        text = " ".join(text.split())[:MAX_TEXT]
+        if not text:
+            return 0
+        for w in windows:
+            w.brain.say(text, seconds or reading_time(text), important=True)
+        return len(windows)
+
+    def ask_and_say(self, windows) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        text, ok = QInputDialog.getText(None, "Desktop Mascots", "Say:")
+        if ok:
+            self.say(text, [w for w in windows if w in self.windows])
+
+    def handle(self, request: dict) -> dict:
+        """Requests from the control socket (see ipc.py)."""
+        cmd = request.get("cmd")
+        if cmd == "say":
+            to = request.get("to") or "all"
+            targets = [w for w in self.windows if to == "all" or w.character.name == to]
+            seconds = request.get("seconds")
+            count = self.say(str(request.get("text", "")), targets,
+                             float(seconds) if seconds else None)
+            return {"ok": True, "count": count}
+        if cmd == "spawn":
+            names = [n for n in request.get("mascots", []) if n in self.characters]
+            for n in names:
+                self.spawn(self.characters[n])
+            return {"ok": True, "count": len(names)}
+        return {"ok": False, "error": f"unknown command: {cmd!r}"}
 
 
 if __name__ == "__main__":
