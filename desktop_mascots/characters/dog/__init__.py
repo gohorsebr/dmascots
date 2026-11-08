@@ -2,7 +2,7 @@ from ...engine import Character
 from .art import CollieArt, LabradorArt
 from .brain import BARK_TIME, CollieBrain, LabradorBrain
 
-_DOG = dict(half_width=50.0, height=62.0, eye_y=47.0, icon_box=(30, -45, 40))
+_DOG = dict(half_width=50.0, height=62.0, eye_y=47.0, icon_box=(30, -45, 40), grip=(44.0, -38.0))
 _COMMON = (
     ("sit", "sit", 4.0, 1.0),
     ("nap", "nap", 8.0, 2.0),

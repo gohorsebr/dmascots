@@ -20,6 +20,9 @@ BARK_TIME = 1.2
 
 class DogBrain(QuadBrain):
     WALK_SPEED = 60.0
+    STEAL_SPEED = 260.0
+    STEAL_LINES = ("Fetch!", "Woof! Mine!", "Catch me!")
+    RETURN_LINES = ("Okay, you can have it.", "Again? Again?")
     STRIDE = 7.0
     LIFT = 4.0
     RUN_SPEED = 260.0

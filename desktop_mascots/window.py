@@ -5,7 +5,7 @@ import random
 import sys
 
 from PySide6.QtCore import QElapsedTimer, QPoint, QPointF, QSize, Qt, QTimer
-from PySide6.QtGui import QBitmap, QCursor, QGuiApplication, QImage, QPainter, QRegion
+from PySide6.QtGui import QBitmap, QColor, QCursor, QGuiApplication, QImage, QPainter, QRegion
 from PySide6.QtWidgets import QMenu, QWidget
 
 from .engine import Bounds, Character
@@ -50,6 +50,7 @@ class MascotWindow(QWidget):
         self._press: QPoint | None = None
         self._grab_offset = QPointF()
         self._dragging = False
+        self._pull_from: QPointF | None = None   # where a stolen pointer was snatched from
 
         self._elapsed = QElapsedTimer()
         self._elapsed.start()
@@ -83,6 +84,7 @@ class MascotWindow(QWidget):
                      round(b.y - (self.base_h - FEET_FROM_BOTTOM) * self.s))
         if pos != self.pos():
             self.move(pos)
+        self._move_pointer()
         self._render()
 
     def _render(self) -> None:
@@ -96,6 +98,13 @@ class MascotWindow(QWidget):
         p.translate(self.width() / 2, self.height() - FEET_FROM_BOTTOM * self.s)
         p.scale(self.s, self.s)
         self.character.paint(p, self.brain.pose, self.brain.facing)
+        if self.brain.pointer is not None:
+            # a near-invisible dot under the held pointer, so clicking the thief hits it
+            # (Windows only passes clicks through *fully* transparent pixels)
+            gx, gy = self._grip_local()
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(0, 0, 0, 2))
+            p.drawEllipse(QPointF(gx, gy), 9, 9)
         p.end()
         if self._use_mask and not self.click_through:
             self._update_mask()
@@ -109,7 +118,36 @@ class MascotWindow(QWidget):
         # grow by 2px: keeps antialiased edges and covers the shape lagging a frame behind
         region = region.united(region.translated(2, 0)).united(region.translated(-2, 0))
         region = region.united(region.translated(0, 2)).united(region.translated(0, -2))
+        if self.brain.pointer is not None:      # X11: the same click target around the held pointer
+            gx, gy = self._grip_local()
+            cx = round(self.width() / 2 + gx * self.s)
+            cy = round(self.height() - FEET_FROM_BOTTOM * self.s + gy * self.s)
+            region = region.united(QRegion(cx - 9, cy - 9, 18, 18, QRegion.Ellipse))
         self.setMask(region if not region.isEmpty() else QRegion(0, 0, 1, 1))
+
+    def _grip_local(self) -> tuple[float, float]:
+        """Grip point in painter units (feet origin, unscaled, mirrored for facing)."""
+        gx, gy = self.character.grip
+        return gx * self.brain.facing, gy
+
+    def _move_pointer(self) -> None:
+        """While this mascot is stealing the pointer, put the real pointer in its mouth."""
+        b = self.brain
+        if b.pointer is None:
+            if self._pull_from is not None:      # just let go
+                self._pull_from = None
+                self.setCursor(Qt.OpenHandCursor)
+            return
+        gx, gy = self._grip_local()
+        target = QPointF(b.x + gx * self.s, b.y + gy * self.s)
+        if self._pull_from is None:
+            self._pull_from = QPointF(QCursor.pos())
+            self.setCursor(Qt.ArrowCursor)       # look like the ordinary pointer being carried
+        kind, k = b.pointer
+        if kind == "pull":
+            e = k * k * (3 - 2 * k)
+            target = self._pull_from + (target - self._pull_from) * e
+        QCursor.setPos(round(target.x()), round(target.y()))
 
     def paintEvent(self, event) -> None:
         p = QPainter(self)

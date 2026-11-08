@@ -9,6 +9,7 @@ CHARACTER = Character(
     half_width=46.0,
     height=52.0,
     eye_y=36.0,
+    grip=(32.0, -28.0),
     icon_box=(24, -37, 34),
     previews=(
         ("sit (slow blink)", "sit", 5.0, 1.0),

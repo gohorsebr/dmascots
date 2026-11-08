@@ -82,6 +82,25 @@ messages, not just the CLI. On Windows the `desktop-mascots` launcher is a GUI
 script and prints nothing, so use `python -m desktop_mascots say ...` there to
 see errors.
 
+## Pointer theft
+
+```bash
+desktop-mascots steal                         # a random mascot, for 5 seconds
+desktop-mascots steal --to goose --seconds 10 # a goose, for 10 seconds (max 60)
+```
+
+The thief runs to your pointer and snatches it, pulling it into its mouth or
+beak. It then runs around the screen zig-zagging with it, and hands it back
+with a remark when time's up. If the pointer is out of reach, say on another
+monitor, it yanks it over from where it is. While it's held, the pointer looks
+like the normal arrow being carried along.
+
+**To get it back early,** click the thief. Any click on a mascot makes it react,
+which ends the theft. `desktop-mascots quit` also works. Only one mascot can
+hold the pointer at a time, and the command exits non-zero if it's already
+taken or there's no matching mascot. On Wayland, apps may not be allowed to
+move the pointer, so it may not work there.
+
 ## Layout
 
 | Path | What it does |

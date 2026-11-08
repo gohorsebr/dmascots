@@ -147,6 +147,13 @@ class QuadBrain(Brain):
         p.tail = -10
         return abs(dx)
 
+    def pose_run(self, p: QuadPose, travelled: float) -> None:
+        stride, lift = self.STRIDE * 1.6, self.LIFT * 1.8
+        self._phase = travelled / stride
+        self.gait(p, self._phase, stride, lift, self.RUN_GAIT)
+        p.ears, p.tail = -0.6, 10
+        p.lean = p.lean + 3
+
     # ----------------------------------------------------------- shared-state poses
     def pose_rest(self, p: QuadPose) -> None:
         self.breathe(p)

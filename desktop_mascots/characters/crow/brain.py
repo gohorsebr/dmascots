@@ -27,6 +27,8 @@ class CrowPose(BasePose):
 
 class CrowBrain(Brain):
     pose_cls = CrowPose
+    STEAL_LINES = ("Shiny!", "Mine.", "CAW!")
+    RETURN_LINES = ("Not shiny enough.", "Kraa. Fine.")
     WALK_SPEED = 65.0
     JUMP_VY = -560.0
     JUMP_VX = 160.0

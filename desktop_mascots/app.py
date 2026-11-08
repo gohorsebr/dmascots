@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import signal
 import sys
 
@@ -20,14 +21,16 @@ def main(argv: list[str] | None = None) -> int:
         return say_command(argv[1:])
     if argv[:1] == ["quit"]:
         return quit_command(argv[1:])
+    if argv[:1] == ["steal"]:
+        return steal_command(argv[1:])
 
     from .characters import CHARACTERS
 
     names = ", ".join(CHARACTERS)
     parser = argparse.ArgumentParser(
         prog="desktop-mascots", description="Mascots that live on top of your windows.",
-        epilog="Send them text with: desktop-mascots say [--to MASCOT] TEXT. "
-               "Close them with: desktop-mascots quit (or Ctrl+C).")
+        epilog="Commands for the running app: 'say [--to MASCOT] TEXT', "
+               "'steal [--to MASCOT] [--seconds N]', 'quit' (or Ctrl+C).")
     parser.add_argument("mascots", nargs="*", metavar="MASCOT",
                         help=f"mascots to spawn, repeat for more ({names}); default: one of each")
     parser.add_argument("--scale", type=float, default=1.0, help="size multiplier (default 1.0)")
@@ -83,6 +86,38 @@ def main(argv: list[str] | None = None) -> int:
     for name in wanted:
         herd.spawn(CHARACTERS[name], lifetime=args.time, say=args.say)
     return app.exec()
+
+
+def steal_command(argv: list[str]) -> int:
+    from .characters import CHARACTERS
+
+    parser = argparse.ArgumentParser(
+        prog="desktop-mascots steal",
+        description="A mascot runs to your pointer, grabs it and runs off with it. "
+                    "Click the thief to get it back early.")
+    parser.add_argument("--to", default="any", metavar="MASCOT",
+                        help=f"who steals it: any (default, picked at random), {', '.join(CHARACTERS)}")
+    parser.add_argument("--seconds", type=float, default=5.0,
+                        help="how long it holds on to the pointer (default 5, max 60)")
+    args = parser.parse_args(argv)
+    if args.to != "any" and args.to not in CHARACTERS:
+        parser.error(f"unknown mascot: {args.to}")
+    if not 0 < args.seconds <= 60:
+        parser.error("--seconds must be more than 0 and at most 60")
+
+    from PySide6.QtCore import QCoreApplication
+
+    from .ipc import send
+
+    _app = QCoreApplication(sys.argv[:1])  # noqa: F841 -- QLocalSocket needs an app object
+    reply = send({"cmd": "steal", "to": args.to, "seconds": args.seconds})
+    if reply is None:
+        print("desktop-mascots isn't running (start it with: desktop-mascots)", file=sys.stderr)
+        return 1
+    if not reply.get("ok"):
+        print(f"error: {reply.get('error')}", file=sys.stderr)
+        return 1
+    return 0
 
 
 def quit_command(argv: list[str]) -> int:
@@ -250,6 +285,18 @@ class Herd:
             for n in names:
                 self.spawn(self.characters[n], lifetime=lifetime, say=str(say) if say else None)
             return {"ok": True, "count": len(names)}
+        if cmd == "steal":
+            if any(w.brain.state == "steal" or w.brain.pointer or w.brain._pending_steal is not None
+                   for w in self.windows):
+                return {"ok": False, "error": "someone is already running off with it"}
+            to = request.get("to") or "any"
+            thieves = [w for w in self.windows
+                       if (to == "any" or w.character.name == to) and w.brain.state != "dragged"]
+            if not thieves:
+                return {"ok": False, "error": f"no {to if to != 'any' else 'mascot'} available to steal it"}
+            seconds = float(request.get("seconds") or 5.0)
+            random.choice(thieves).brain.steal(seconds)
+            return {"ok": True, "count": 1}
         if cmd == "quit":
             from PySide6.QtCore import QTimer
             QTimer.singleShot(0, self.app.quit)   # after the reply has gone out

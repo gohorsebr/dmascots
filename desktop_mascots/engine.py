@@ -50,6 +50,7 @@ class Character:
     icon_box: tuple[float, float, float]  # (cx, cy, extent) framed by the tray icon
     size: tuple[int, int] = (240, 226)    # window size at scale 1 (room for a wrapped bubble)
     previews: tuple = ()        # (label, state, duration, at) extra scenes for tools/preview.py
+    grip: tuple[float, float] = (10.0, -40.0)  # where it holds a stolen pointer (mouth/beak), from the feet
 
 
 def clamp(v: float, lo: float, hi: float) -> float:
@@ -98,6 +99,9 @@ class Brain:
     JUMP_VX: ClassVar[float] = 220.0
     DIZZY_IMPACT: ClassVar[float] = 1900.0   # landing speed that leaves it seeing stars
     LINES: ClassVar[tuple[str, ...]] = ("Hi!",)
+    STEAL_SPEED: ClassVar[float] = 230.0     # px/s while running off with the pointer
+    STEAL_LINES: ClassVar[tuple[str, ...]] = ("Mine!", "Hehehe!", "Gotcha!")
+    RETURN_LINES: ClassVar[tuple[str, ...]] = ("Fine, have it back.", "Okay, okay!", "…here.")
     # states where the feet are off the floor and the state itself moves the mascot
     AIRBORNE: ClassVar[tuple[str, ...]] = ("air", "dragged")
     # flyers: add "fly" to CHOICES and AIRBORNE, and implement pose_flight
@@ -134,6 +138,9 @@ class Brain:
         self._bubble_until = 0.0
         self._bubble_important = False
         self.heard: list[str] = []  # recent messages sent to it (parrots repeat these)
+        # while stealing: ("pull", 0..1) dragging the pointer in, then ("hold", 1.0)
+        self.pointer: tuple[str, float] | None = None
+        self._pending_steal: float | None = None
 
     # ----------------------------------------------------------- events
     @property
@@ -186,6 +193,7 @@ class Brain:
         self.clock += dt
         self.t += dt
         self.cursor = cursor
+        self.pointer = None             # only the steal state holds the pointer, frame by frame
         if not self.airborne:
             if self.y < bounds.floor - 2:   # floor moved away (screen/workarea change)
                 self.vx = self.vy = 0.0
@@ -194,6 +202,9 @@ class Brain:
             else:
                 self.y = bounds.floor
                 self.x = clamp(self.x, bounds.left, bounds.right)
+                if self._pending_steal is not None and self.state != "dizzy":
+                    self.go("steal", self._pending_steal)   # asked while in the air: do it now
+                    self._pending_steal = None
         p = self.pose_cls()
         getattr(self, "_" + self.state)(dt, bounds, p)
         self._face(dt, p)
@@ -342,6 +353,72 @@ class Brain:
         p.swing = self._swing * self.facing   # painters mirror when facing left
         p.eyes = "wide"
         self.pose_dragged(p)
+
+    def pose_run(self, p, travelled: float) -> None:
+        """Running pose; travelled (px) drives the gait so feet keep pace with the ground."""
+        self.pose_walk(p, travelled / self.WALK_SPEED)
+
+    # ----------------------------------------------------------- pointer theft
+    MAX_STEAL: ClassVar[float] = 60.0
+    CHASE_LIMIT: ClassVar[float] = 3.0      # after this long chasing, it just yanks the pointer over
+    SNATCH_TIME: ClassVar[float] = 0.45
+
+    def steal(self, seconds: float) -> bool:
+        """Run to the pointer, grab it, run around holding it for `seconds`."""
+        seconds = clamp(float(seconds), 0.5, self.MAX_STEAL)
+        if self.state == "dragged":
+            return False
+        if self.airborne:
+            self._pending_steal = seconds      # after landing
+        else:
+            self.go("steal", seconds)
+        return True
+
+    def _steal(self, dt: float, b: Bounds, p) -> None:
+        if self.entered:
+            self._steal_phase, self._steal_t0 = "chase", 0.0
+            self._steal_dist = 0.0
+            self._steal_turn = 0.0
+        phase = self._steal_phase
+        if phase == "chase":
+            dx = self.cursor[0] if self.cursor else 0.0
+            # pointer out of reach (other monitor, past the edge)? yank it over from where we are
+            blocked = (dx < 0 and self.x <= b.left + 1) or (dx > 0 and self.x >= b.right - 1)
+            if abs(dx) < 25 or blocked or self.t > self.CHASE_LIMIT:
+                self._steal_phase, self._steal_t0 = "snatch", self.t
+                self.say(self.rng.choice(self.STEAL_LINES), 1.2)
+            else:
+                self.facing = 1 if dx > 0 else -1
+                step = self.STEAL_SPEED * dt
+                self.step_x(b, self.facing * step)
+                self._steal_dist += step
+                self.pose_run(p, self._steal_dist)
+                return
+        if self._steal_phase == "snatch":
+            k = (self.t - self._steal_t0) / self.SNATCH_TIME
+            self.pose_rest(p)
+            p.eyes = "wide"
+            self.pointer = ("pull", clamp(k, 0.0, 1.0))
+            if k >= 1:
+                self._steal_phase, self._steal_t0 = "carry", self.t
+                self._steal_turn = self.t + self.rng.uniform(0.8, 2.0)
+            return
+        # carry: run around with it until the time is up
+        if self.t - self._steal_t0 >= self.duration:
+            self.say(self.rng.choice(self.RETURN_LINES), 1.6)
+            self.pose_rest(p)
+            self.go_idle()
+            return
+        if self.t >= self._steal_turn:      # zig-zag to keep you guessing
+            self.facing = -self.facing
+            self._steal_turn = self.t + self.rng.uniform(0.8, 2.5)
+        step = self.STEAL_SPEED * dt
+        self.step_x(b, self.facing * step)
+        self._steal_dist += step
+        self.pose_run(p, self._steal_dist)
+        self.pointer = ("hold", 1.0)
+        if self.rng.random() < dt * 0.15:
+            self.say(self.rng.choice(self.STEAL_LINES), 1.0)
 
     def pose_flight(self, p, prog: float) -> None:
         """Pose while flying; prog runs 0 (take-off) -> 1 (touch-down)."""

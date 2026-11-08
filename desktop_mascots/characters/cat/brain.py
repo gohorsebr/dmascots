@@ -13,6 +13,9 @@ MEOW_TIME = 0.9
 
 class CatBrain(QuadBrain):
     rig = CAT_RIG
+    STEAL_SPEED = 250.0
+    STEAL_LINES = ("Mine.", "Mrrp!", "*knocks it over*")
+    RETURN_LINES = ("Bored now.", "…fine.")
     WALK_SPEED = 45.0
     STRIDE = 6.0
     LIFT = 3.5

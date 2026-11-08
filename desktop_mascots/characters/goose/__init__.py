@@ -9,6 +9,7 @@ CHARACTER = Character(
     half_width=art.HALF_WIDTH,
     height=art.HEIGHT,
     eye_y=art.EYE_Y,
+    grip=(36.0, -76.0),
     icon_box=(24, -76, 42),
     previews=(
         ("graze", "graze", 4.0, 1.0),

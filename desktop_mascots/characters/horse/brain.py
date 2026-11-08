@@ -14,6 +14,9 @@ REAR_TIME = 2.0
 
 class HorseBrain(QuadBrain):
     rig = HORSE_RIG
+    STEAL_SPEED = 300.0
+    STEAL_LINES = ("Neigh!", "Giddy-up!")
+    RETURN_LINES = ("*snort*", "Hrrm. Here.")
     WALK_SPEED = 55.0
     STRIDE = 12.0
     LIFT = 7.0

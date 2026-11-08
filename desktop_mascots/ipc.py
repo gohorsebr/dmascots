@@ -3,6 +3,7 @@
 Protocol: one JSON object per line in each direction.
     {"cmd": "say", "text": "...", "to": "all" | "<mascot>", "seconds": float | null}
     {"cmd": "spawn", "mascots": ["monkey", ...], "lifetime": float | null, "say": str | null}
+    {"cmd": "steal", "to": "any" | "<mascot>", "seconds": float}
     {"cmd": "quit"}
 Replies: {"ok": true, "count": N} or {"ok": false, "error": "..."}
 """

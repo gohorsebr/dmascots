@@ -26,6 +26,8 @@ class ParrotPose(BasePose):
 
 class ParrotBrain(Brain):
     pose_cls = ParrotPose
+    STEAL_LINES = ("Pretty pointer!", "SQUAWK!", "Mine! Mine!")
+    RETURN_LINES = ("Bye bye!", "Hehehe.")
     WALK_SPEED = 32.0
     JUMP_VY = -520.0
     JUMP_VX = 120.0

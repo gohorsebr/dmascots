@@ -25,6 +25,9 @@ class GoosePose(BasePose):
 
 class GooseBrain(Brain):
     pose_cls = GoosePose
+    STEAL_SPEED = 200.0
+    STEAL_LINES = ("HONK!", "Mine now.", "HONK HONK!")
+    RETURN_LINES = ("Hmph. Take it.", "Honk.")
     WALK_SPEED = 55.0
     JUMP_VY = -620.0
     LINES = ("HONK!", "Honk?", "HONK HONK!", "Hssss!")

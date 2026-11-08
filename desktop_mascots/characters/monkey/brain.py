@@ -26,6 +26,7 @@ class MonkeyPose(BasePose):
 
 class MonkeyBrain(Brain):
     pose_cls = MonkeyPose
+    STEAL_LINES = ("Ook ook!", "Mine!", "Eek eek!")
     WALK_SPEED = 75.0
     LINES = ("Ook!", "Ook ook!", "Eek!", "Banana?", "Hi!")
     CHOICES = (

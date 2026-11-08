@@ -9,6 +9,7 @@ CHARACTER = Character(
     half_width=88.0,
     height=130.0,
     eye_y=102.0,
+    grip=(82.0, -68.0),
     icon_box=(70, -95, 72),
     size=(300, 280),
     previews=(

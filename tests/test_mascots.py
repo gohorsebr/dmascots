@@ -113,6 +113,52 @@ class MascotTest(unittest.TestCase):
             said.add(b.pose.bubble)
         self.assertIn("deploy is green", said)
 
+    def test_steals_the_pointer_and_gives_it_back(self):
+        def check(char):
+            b = char.brain(300, B.floor, rng=random.Random(9))
+            step(b, 1)
+            b.go("idle", 99)
+            cursor = [800.0, 300.0]          # absolute pointer position, far away
+            phases, held = [], 0.0
+            self.assertTrue(b.steal(2.0))
+            for _ in range(round(12 / DT)):
+                b.update(DT, B, cursor=(cursor[0] - b.x, cursor[1] - (b.y - char.eye_y)))
+                if b.pointer:                # the window would now move the real pointer
+                    gx, gy = char.grip
+                    cursor = [b.x + gx * b.facing, b.y + gy]
+                    if b.pointer[0] == "hold":
+                        held += DT
+                self.assertTrue(B.left <= b.x <= B.right)
+                if not phases or phases[-1] != (b.pointer or ("free",))[0]:
+                    phases.append((b.pointer or ("free",))[0])
+                if b.state != "steal":
+                    break
+            self.assertEqual(phases, ["free", "pull", "hold", "free"])   # chase, snatch, carry, give back
+            self.assertAlmostEqual(held, 2.0, delta=0.1)
+            self.assertIsNone(b.pointer)
+            self.assertIn(b.pose.bubble, char.brain.RETURN_LINES)
+        self.each(check)
+
+    def test_clicking_the_thief_gets_the_pointer_back(self):
+        def check(char):
+            b = char.brain(500, B.floor, rng=random.Random(10))
+            step(b, 1)
+            b.steal(30.0)
+            step(b, 2.0, cursor=(0, 0))      # pointer is right there: snatched and carried
+            self.assertEqual(b.pointer, ("hold", 1.0))
+            b.poke()
+            step(b, 0.05)
+            self.assertIsNone(b.pointer)
+            self.assertNotEqual(b.state, "steal")
+        self.each(check)
+
+    def test_steal_requested_mid_air_waits_for_landing(self):
+        b = CHARACTERS["goose"].brain(500, B.floor - 300, rng=random.Random(11))
+        b.steal(1.0)
+        self.assertEqual(b.state, "air")
+        seen = step(b, 2.0, cursor=(0, 0))
+        self.assertIn("steal", seen)
+
 
 if __name__ == "__main__":
     unittest.main()
