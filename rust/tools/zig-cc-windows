@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Linker shim: lets rustc link x86_64-pc-windows-gnu binaries with `zig cc` instead of mingw-w64.
+# Drops the GCC/mingw flags zig's linker doesn't take (it brings its own CRT and libunwind).
+# ZIG picks the zig command (default: zig; with `pip install ziglang`: ZIG="python3 -m ziglang").
+args=()
+for a in "$@"; do
+  case "$a" in
+    -lgcc_eh|-lgcc_s|-lgcc|-lmsvcrt|-lmingwex|-lmingw32|-l:libpthread.a|-nodefaultlibs) ;;
+    -Wl,-Bdynamic|-Wl,-Bstatic|-Wl,-O1|-Wl,--disable-auto-image-base|-Wl,--large-address-aware) ;;
+    *crt2.o|*dllcrt2.o|*rsbegin.o|*rsend.o) ;;
+    *) args+=("$a") ;;
+  esac
+done
+exec ${ZIG:-zig} cc -target x86_64-windows-gnu "${args[@]}" -lunwind

@@ -1,0 +1,51 @@
+[package]
+name = "desktop-mascots"
+version = "0.2.0"
+edition = "2021"
+description = "Mascots that wander on top of your desktop without stealing focus."
+license = "MIT"
+
+[[bin]]
+name = "desktop-mascots"
+path = "src/main.rs"
+
+[dependencies]
+tiny-skia = { version = "0.11", default-features = false, features = ["std", "simd", "png-format"] }
+i_overlay = "1.9"
+ttf-parser = "0.25"
+serde_json = { version = "1", features = ["preserve_order"] }
+clap = { version = "4", features = ["derive"] }
+rand = { version = "0.8", features = ["small_rng"] }
+
+[target.'cfg(unix)'.dependencies]
+x11rb = { version = "0.13", features = ["shape", "randr", "cursor", "resource_manager"] }
+libc = "0.2"
+ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.dev]
+opt-level = 1   # rasterising 60 fps in debug builds is otherwise sluggish

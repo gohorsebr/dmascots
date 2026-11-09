@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# windows-sys needs a mingw dlltool to build import libraries; zig ships one.
+exec ${ZIG:-zig} dlltool "$@"
