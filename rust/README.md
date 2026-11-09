@@ -40,6 +40,8 @@ DESKTOP_MASCOTS_SOCKET=dm-test-$$ cargo run -- goose --time 5
 ```bash
 make build            # target/release/desktop-mascots for this OS
 make build-windows    # target/x86_64-pc-windows-gnu/release/desktop-mascots.exe
+make install          # copy to $XDG_BIN_HOME, else ~/.local/bin (or BINDIR=/some/dir)
+make uninstall
 ```
 
 `build-windows` uses mingw-w64 if it's installed (`sudo apt install mingw-w64`).
