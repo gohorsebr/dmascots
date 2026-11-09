@@ -2,8 +2,10 @@
 //!
 //! Each mascot is a 32-bit ARGB override-redirect window: the window manager never
 //! focuses, decorates or lists it, and a compositor blends its alpha. The XShape
-//! bounding and input shapes follow the mascot every frame, so clicks land on the
-//! windows underneath everywhere else (and it still looks right without a compositor).
+//! input shape follows the mascot every frame, so clicks land on the windows underneath
+//! everywhere else. The bounding shape is only set when no compositor is running:
+//! changing it costs the server and the compositor ~10 ms per window per frame, and
+//! with a compositor the alpha channel already hides the transparent pixels.
 
 use std::collections::HashMap;
 use std::os::fd::AsRawFd;
@@ -35,6 +37,10 @@ struct Win {
     mapped: bool,
     click_through: bool,
     cursor: Option<CursorShape>,
+    /// the bounding shape last sent (None: the default, the whole window)
+    bounding: Option<Vec<Rect>>,
+    /// the input shape last sent (None: not sent yet, or must be re-sent)
+    input: Option<Vec<Rect>>,
 }
 
 pub struct X11 {
@@ -51,6 +57,9 @@ pub struct X11 {
     cursors: HashMap<CursorShape, u32>,
     screens: Vec<Screen>,
     screens_at: Option<Instant>,
+    /// _NET_WM_CM_S<screen>: owned by the running compositing manager, if any
+    cm_atom: u32,
+    composited: bool,
     max_request: usize,
     atoms: Atoms,
     popup: Option<Popup>,
@@ -99,6 +108,8 @@ impl X11 {
         conn.create_colormap(ColormapAlloc::NONE, colormap, root, visual).map_err(err)?;
         let has_shape = conn.extension_information(shape::X11_EXTENSION_NAME).map_err(err)?.is_some();
         let atoms = Atoms::new(&conn).map_err(err)?.reply().map_err(err)?;
+        let cm_atom =
+            conn.intern_atom(false, format!("_NET_WM_CM_S{screen}").as_bytes()).map_err(err)?.reply().map_err(err)?.atom;
         let max_request = conn.maximum_request_bytes();
         let (tx, rx) = mpsc::channel();
         Ok(X11 {
@@ -115,6 +126,8 @@ impl X11 {
             cursors: HashMap::new(),
             screens: Vec::new(),
             screens_at: None,
+            cm_atom,
+            composited: false,
             max_request,
             atoms,
             popup: None,
@@ -150,6 +163,14 @@ impl X11 {
         }
         self.cursors.insert(shape, cursor);
         cursor
+    }
+
+    fn query_composited(&self) -> bool {
+        self.conn
+            .get_selection_owner(self.cm_atom)
+            .ok()
+            .and_then(|c| c.reply().ok())
+            .is_some_and(|r| r.owner != x11rb::NONE)
     }
 
     fn query_screens(&self) -> Vec<Screen> {
@@ -218,20 +239,29 @@ impl X11 {
         Ok(())
     }
 
-    fn set_shape(&self, win: &Win, rects: Option<&[Rect]>) {
-        if !self.has_shape {
-            return;
-        }
-        let to_x = |r: &Rect| Rectangle { x: r.x as i16, y: r.y as i16, width: r.w as u16, height: r.h as u16 };
-        let full = [Rectangle { x: 0, y: 0, width: win.w as u16, height: win.h as u16 }];
-        let xs: Vec<Rectangle> = match rects {
-            Some(r) if r.is_empty() => vec![Rectangle { x: 0, y: 0, width: 1, height: 1 }],
-            Some(r) => r.iter().map(to_x).collect(),
-            None => full.to_vec(),
+    /// Send the window's shapes, skipping whatever hasn't changed since the last frame.
+    fn set_shape(conn: &RustConnection, composited: bool, win: &mut Win, rects: Option<&[Rect]>) {
+        let wanted: Vec<Rect> = match rects {
+            Some([]) => vec![Rect { x: 0, y: 0, w: 1, h: 1 }],
+            Some(r) => r.to_vec(),
+            None => vec![Rect { x: 0, y: 0, w: win.w as i32, h: win.h as i32 }],
         };
-        let _ = shape::rectangles(&self.conn, SO::SET, SK::BOUNDING, ClipOrdering::YX_BANDED, win.xid, 0, 0, &xs);
-        let input: &[Rectangle] = if win.click_through { &[] } else { &xs };
-        let _ = shape::rectangles(&self.conn, SO::SET, SK::INPUT, ClipOrdering::YX_BANDED, win.xid, 0, 0, input);
+        let to_x = |r: &[Rect]| -> Vec<Rectangle> {
+            r.iter().map(|r| Rectangle { x: r.x as i16, y: r.y as i16, width: r.w as u16, height: r.h as u16 }).collect()
+        };
+        let bounding = if composited { None } else { Some(wanted.clone()) };
+        if win.bounding != bounding {
+            let _ = match &bounding {
+                Some(r) => shape::rectangles(conn, SO::SET, SK::BOUNDING, ClipOrdering::YX_BANDED, win.xid, 0, 0, &to_x(r)),
+                None => shape::mask(conn, SO::SET, SK::BOUNDING, win.xid, 0, 0, x11rb::NONE), // back to the whole window
+            };
+            win.bounding = bounding;
+        }
+        let input = if win.click_through { Vec::new() } else { wanted };
+        if win.input.as_ref() != Some(&input) {
+            let _ = shape::rectangles(conn, SO::SET, SK::INPUT, ClipOrdering::YX_BANDED, win.xid, 0, 0, &to_x(&input));
+            win.input = Some(input);
+        }
     }
 
     fn button(detail: u8) -> Button {
@@ -320,7 +350,18 @@ impl Backend for X11 {
         self.next_id += 1;
         self.wins.insert(
             id,
-            Win { xid, gc, w: width, h: height, pos: None, mapped: false, click_through: false, cursor: None },
+            Win {
+                xid,
+                gc,
+                w: width,
+                h: height,
+                pos: None,
+                mapped: false,
+                click_through: false,
+                cursor: None,
+                bounding: None,
+                input: None,
+            },
         );
         self.by_xid.insert(xid, id);
         id
@@ -336,11 +377,17 @@ impl Backend for X11 {
     }
 
     fn present(&mut self, win: WinId, x: i32, y: i32, frame: &Frame) {
-        let Some(w) = self.wins.get(&win) else { return };
+        if self.screens_at.is_none() {
+            self.screens(); // also finds out whether a compositor is running
+        }
+        let Some(w) = self.wins.get_mut(&win) else { return };
         if w.pos != Some((x, y)) {
             let _ = self.conn.configure_window(w.xid, &ConfigureWindowAux::new().x(x).y(y));
         }
-        self.set_shape(w, frame.shape);
+        if self.has_shape {
+            Self::set_shape(&self.conn, self.composited, w, frame.shape);
+        }
+        let w = &self.wins[&win];
         let _ = self.put_image(w, frame);
         if !w.mapped {
             let _ = self.conn.map_window(w.xid);
@@ -354,8 +401,9 @@ impl Backend for X11 {
     fn set_click_through(&mut self, win: WinId, on: bool) {
         if let Some(w) = self.wins.get_mut(&win) {
             w.click_through = on;
+            w.input = None;
         }
-        // the input shape is refreshed on the next present()
+        // the input shape is re-sent on the next present()
     }
 
     fn set_cursor(&mut self, win: WinId, shape: CursorShape) {
@@ -385,9 +433,10 @@ impl Backend for X11 {
     }
 
     fn screens(&mut self) -> Vec<Screen> {
-        // panels and monitors rarely change: re-read them every couple of seconds
+        // panels, monitors and the compositor rarely change: re-read them every couple of seconds
         if self.screens_at.map_or(true, |t| t.elapsed() > Duration::from_secs(2)) {
             self.screens = self.query_screens();
+            self.composited = self.query_composited();
             self.screens_at = Some(Instant::now());
         }
         self.screens.clone()

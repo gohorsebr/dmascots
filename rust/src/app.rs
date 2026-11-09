@@ -90,11 +90,11 @@ impl MascotWin {
         (gx * self.brain.core().facing, gy)
     }
 
-    fn tick(&mut self, be: &mut dyn Backend, screens: &[Screen]) {
+    /// cur: the pointer position, read once per frame for the whole herd (on X11 it's a round trip)
+    fn tick(&mut self, be: &mut dyn Backend, screens: &[Screen], cur: (i32, i32)) {
         let now = Instant::now();
         let dt = (now - self.last).as_secs_f64();
         self.last = now;
-        let cur = be.cursor_pos();
         let bounds = self.bounds(screens, cur);
         let c = self.brain.core();
         let eye_y = c.y - self.character.eye_y * self.s;
@@ -390,7 +390,8 @@ impl Herd {
                 m.brain.core_mut().say(&text, secs, true);
             }
         }
-        m.tick(self.be.as_mut(), &screens);
+        let cur = self.be.cursor_pos();
+        m.tick(self.be.as_mut(), &screens, cur);
         self.windows.push(m);
         self.windows.len() - 1
     }
@@ -580,8 +581,9 @@ impl Herd {
                 i += 1;
             }
         }
+        let cur = self.be.cursor_pos();
         for m in &mut self.windows {
-            m.tick(self.be.as_mut(), &screens);
+            m.tick(self.be.as_mut(), &screens, cur);
         }
         if now >= *next_raise {
             for m in &self.windows {
